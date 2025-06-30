@@ -1,0 +1,9 @@
+streamlit>=1.28.0
+playwright>=1.40.0
+pystray>=0.19.5
+httpx>=0.25.0
+win11toast>=0.34
+Pillow>=10.0.0
+feedparser>=6.0.10
+psutil
+httpx[http2]

@@ -1,0 +1,48 @@
+{
+  "아리사": {
+    "chzzk_id": "4de764d9dad3b25602284be6db3ac647",
+    "twitter_username": "Aesther_Arisa",
+    "cafe_user_id": "cuEWXUyMqKzQGLwr3RwrXw",
+    "cafe_club_id": "30919539",
+    "enabled": true,
+    "profile_image": null
+  },
+  "카린": {
+    "chzzk_id": "32fb866e323242b770cdc790f991a6f6",
+    "twitter_username": "aesther_karin",
+    "cafe_user_id": "0eMme44p-arwLgz3wMo-3w",
+    "cafe_club_id": "30919539",
+    "enabled": true,
+    "profile_image": null
+  },
+  "엘리": {
+    "chzzk_id": "475313e6c26639d5763628313b4c130e",
+    "twitter_username": "Bestwizardellie",
+    "cafe_user_id": "blKmz6tKug60_5B_A_UNQA",
+    "cafe_club_id": "30919539",
+    "enabled": true,
+    "profile_image": null
+  },
+  "에리스": {
+    "chzzk_id": "17d8605fc37fb5ef49f5f67ae786fe4e",
+    "twitter_username": "Aesther_Eris",
+    "cafe_user_id": "7DjwjhrCoMP8DCw1623w3w",
+    "cafe_club_id": "30919539",
+    "enabled": true,
+    "profile_image": null
+  },
+  "소풍왔니": {
+    "chzzk_id": "089185efc29a8fbe14ea294dc85f9661",
+    "twitter_username": "gomgomdru",
+    "cafe_user_id": "GO7tGTwhLKbT-wGtJXyH3A",
+    "cafe_club_id": "30288368",
+    "enabled": true
+  },
+  "아라하시 타비": {
+    "chzzk_id": "a6c4ddb09cdb160478996007bff35296",
+    "twitter_username": "ArahashiTabi",
+    "cafe_user_id": "3BcOWMiN3wPomGVkb8D_Nw",
+    "cafe_club_id": "29424353",
+    "enabled": true
+  }
+}

@@ -570,81 +570,23 @@ class StreamerAlarmApp:
             asyncio.set_event_loop(loop)
             
             try:
-                # 먼저 현재 로그인 상태 확인
-                current_status = False
-                try:
-                    if naver_session.page and naver_session.browser:
-                        # 현재 로그인 상태 확인에 타임아웃 적용 (12초로 단축)
-                        check_task = naver_session.check_login_status()
-                        current_status = loop.run_until_complete(asyncio.wait_for(check_task, timeout=12.0))
-                    
-                    if current_status:
-                        logger.info("이미 네이버에 로그인되어 있습니다 - 사용자 요청에 따라 로그인 창을 다시 엽니다")
-                        
-                        # 이미 로그인되어 있어도 사용자가 명시적으로 재로그인을 요청했으므로 로그인 창을 엽니다
-                        try:
-                            logger.info("force_visible=True로 네이버 로그인 호출 시작")
-                            
-                            # 헤드리스 모드 해제하여 로그인 창 표시 (타임아웃 적용)
-                            try:
-                                login_task = naver_session.login(force_visible=True)
-                                result = loop.run_until_complete(asyncio.wait_for(login_task, timeout=30.0))
-                                logger.info(f"네이버 로그인 호출 완료, 결과: {result}")
-                            except asyncio.TimeoutError:
-                                logger.error("네이버 로그인 호출 타임아웃 (30초)")
-                                result = False
-                            
-                            if result:
-                                logger.info("네이버 재로그인 성공")
-                                request_data['status'] = 'completed'
-                                request_data['completed_at'] = datetime.now().isoformat()
-                                request_data['message'] = '재로그인 성공'
-                            else:
-                                logger.warning("네이버 재로그인 실패 또는 취소됨")
-                                request_data['status'] = 'failed'
-                                request_data['failed_at'] = datetime.now().isoformat()
-                                request_data['error'] = '재로그인 실패 또는 사용자 취소'
-                            
-                            with open(login_request_file, 'w', encoding='utf-8') as f:
-                                json.dump(request_data, f, ensure_ascii=False, indent=2)
-                                
-                            # 3초 후 파일 삭제
-                            def cleanup():
-                                import time
-                                time.sleep(3)
-                                try:
-                                    if os.path.exists(login_request_file):
-                                        os.remove(login_request_file)
-                                except:
-                                    pass
-                            
-                            threading.Thread(target=cleanup, daemon=True).start()
-                            
-                        except Exception as e:
-                            logger.error(f"재로그인 처리 중 오류: {e}")
-                            import traceback
-                            logger.error(f"재로그인 처리 오류 상세:\n{traceback.format_exc()}")
-                            
-                            request_data['status'] = 'failed'
-                            request_data['failed_at'] = datetime.now().isoformat()
-                            request_data['error'] = f'재로그인 처리 오류: {str(e)}'
-                            
-                            with open(login_request_file, 'w', encoding='utf-8') as f:
-                                json.dump(request_data, f, ensure_ascii=False, indent=2)
-                        
-                        return
-                        
-                except Exception as e:
-                    logger.info(f"로그인 상태 확인 중 오류 (새로 로그인 시도): {e}")
+                # UI 로그인 요청은 시스템 트레이와 동일하게 처리 (상태 확인 건너뛰기)
+                logger.info("UI에서 네이버 로그인 요청 - 시스템 트레이와 동일한 방식으로 처리")
+                logger.info("로그인 상태 확인 건너뛰고 즉시 브라우저 창 표시")
                 
-                # 로그인이 필요한 경우 브라우저 창 열기
-                logger.info("네이버 로그인이 필요합니다. 브라우저 창을 엽니다.")
                 try:
-                    login_task = naver_session.login()
-                    result = loop.run_until_complete(asyncio.wait_for(login_task, timeout=60.0))
-                    logger.info(f"네이버 로그인 완료, 결과: {result}")
+                    logger.info("force_visible=True로 네이버 로그인 호출 시작")
+                    
+                    # 헤드리스 모드 해제하여 로그인 창 표시 (타임아웃 적용)
+                    login_task = naver_session.login(force_visible=True)
+                    result = loop.run_until_complete(asyncio.wait_for(login_task, timeout=30.0))
+                    logger.info(f"네이버 로그인 호출 완료, 결과: {result}")
+                    
                 except asyncio.TimeoutError:
-                    logger.error("네이버 로그인 타임아웃 (60초)")
+                    logger.error("네이버 로그인 호출 타임아웃 (30초)")
+                    result = False
+                except Exception as e:
+                    logger.error(f"네이버 로그인 처리 중 오류: {e}")
                     result = False
                 
                 # 결과에 따른 상태 업데이트

@@ -168,6 +168,67 @@ class NaverSession:
             await self.close_visible_browser()
             return False
     
+    async def sync_session_to_main_browser(self):
+        """visible 브라우저의 세션 데이터를 메인 헤드리스 브라우저로 동기화"""
+        try:
+            logger.info("🔄 세션 데이터 동기화 시작 (visible → 헤드리스)")
+            
+            if not self.visible_browser:
+                logger.warning("visible 브라우저가 없어 세션 동기화 불가")
+                return False
+            
+            # visible 브라우저의 쿠키 가져오기
+            visible_cookies = await self.visible_browser.cookies()
+            naver_cookies = [c for c in visible_cookies if 'naver.com' in c.get('domain', '')]
+            
+            if not naver_cookies:
+                logger.warning("visible 브라우저에 네이버 쿠키가 없음")
+                return False
+            
+            logger.info(f"visible 브라우저에서 {len(naver_cookies)}개 네이버 쿠키 발견")
+            
+            # 메인 헤드리스 브라우저가 없으면 생성
+            if not self.browser or not self.page:
+                logger.info("메인 브라우저가 없어 헤드리스 모드로 새로 생성")
+                if not await self.start_browser(headless=True):
+                    logger.error("메인 헤드리스 브라우저 생성 실패")
+                    return False
+            
+            # 메인 브라우저에 쿠키 설정
+            try:
+                await self.browser.add_cookies(naver_cookies)
+                logger.info("✅ 메인 브라우저에 네이버 쿠키 동기화 완료")
+                
+                # 추가 검증: 메인 브라우저에서 로그인 상태 확인
+                await asyncio.sleep(2)  # 쿠키 적용 대기
+                if self.page:
+                    try:
+                        await self.page.goto("https://www.naver.com", wait_until="domcontentloaded", timeout=10000)
+                        await asyncio.sleep(1)
+                        
+                        # 메인 브라우저에서 로그인 상태 재확인
+                        login_status = await self._check_login_status_internal()
+                        if login_status:
+                            logger.info("✅ 메인 브라우저 로그인 상태 확인됨 - 세션 동기화 성공")
+                            self.is_logged_in = True
+                            return True
+                        else:
+                            logger.warning("❌ 메인 브라우저 로그인 상태 확인 실패")
+                    except Exception as verify_error:
+                        logger.warning(f"메인 브라우저 로그인 상태 검증 실패: {verify_error}")
+                
+                return True
+                
+            except Exception as cookie_error:
+                logger.error(f"메인 브라우저 쿠키 설정 실패: {cookie_error}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"세션 동기화 중 오류: {e}")
+            import traceback
+            logger.error(f"세션 동기화 오류 상세:\n{traceback.format_exc()}")
+            return False
+    
     async def close_visible_browser(self):
         """별도 visible 브라우저 정리"""
         try:
@@ -308,7 +369,7 @@ class NaverSession:
             return False
     
     async def _check_login_status_internal(self) -> bool:
-        """내부 로그인 상태 확인 로직"""
+        """내부 로그인 상태 확인 로직 (쿠키 우선, DOM 보조)"""
         try:
             if not self.page:
                 return False
@@ -338,7 +399,32 @@ class NaverSession:
             else:
                 logger.debug(f"현재 페이지에서 로그인 상태 확인: {current_url}")
             
-            # 다양한 로그인 상태 요소 확인 (더 안정적인 방법)
+            # 1단계: 쿠키 기반 로그인 상태 확인 (우선 방법)
+            cookie_login_status = False
+            logger.info("쿠키 기반 로그인 상태 확인 시작")
+            try:
+                # 빠른 쿠키 확인
+                cookies = await asyncio.wait_for(self.page.context.cookies(), timeout=3.0)
+                naver_login_cookies = [c for c in cookies if c.get('name') in ['NID_AUT', 'NID_SES'] and 'naver.com' in c.get('domain', '')]
+                if naver_login_cookies:
+                    logger.info(f"쿠키 기반 로그인 상태 확인됨 - {len(naver_login_cookies)}개 쿠키")
+                    cookie_login_status = True
+                else:
+                    logger.info("네이버 로그인 쿠키 없음")
+            except asyncio.TimeoutError:
+                logger.warning("쿠키 확인 타임아웃")
+            except Exception as e:
+                logger.warning(f"쿠키 확인 실패: {e}")
+            
+            # 2단계: DOM 요소 기반 확인 (보조 방법, 타임아웃 증가)
+            dom_login_status = False
+            if cookie_login_status:
+                # 쿠키가 있는 경우, DOM 확인도 시도하되 실패해도 쿠키 결과 우선
+                logger.debug("쿠키 확인됨 - DOM 요소로 추가 검증 시도")
+            else:
+                # 쿠키가 없는 경우, DOM으로 확실히 확인
+                logger.debug("쿠키 없음 - DOM 요소로 로그인 상태 확인")
+            
             login_check_selectors = [
                 '.MyView-module__my_info___GNmHz',  # 기존 셀렉터
                 '.MyView-module__nickname___fcxwI',  # 닉네임 요소
@@ -348,36 +434,27 @@ class NaverSession:
                 '#gnb_my_m',  # 모바일 GNB
             ]
             
-            logged_in_element = None
-            logger.debug("DOM 요소 기반 로그인 상태 확인 시작")  # INFO -> DEBUG로 변경
             for selector in login_check_selectors:
                 try:
-                    # 타임아웃을 1초로 단축하여 빠른 확인
-                    element = await self.page.wait_for_selector(selector, timeout=1000, state="attached")
+                    # 타임아웃을 5초로 증가 (1초 → 5초)
+                    element = await self.page.wait_for_selector(selector, timeout=5000, state="attached")
                     if element:
-                        logged_in_element = element
-                        logger.debug(f"로그인 상태 확인 성공: {selector}")  # INFO -> DEBUG로 변경
+                        dom_login_status = True
+                        logger.debug(f"DOM 로그인 상태 확인 성공: {selector}")
                         break
                 except Exception as e:
                     logger.debug(f"셀렉터 {selector} 확인 실패: {e}")
                     continue
             
-            # 쿠키 기반 로그인 상태 확인 (보조 방법)
-            if not logged_in_element:
-                logger.info("쿠키 기반 로그인 상태 확인 시작")
-                try:
-                    # 빠른 쿠키 확인
-                    cookies = await asyncio.wait_for(self.page.context.cookies(), timeout=3.0)
-                    naver_login_cookies = [c for c in cookies if c.get('name') in ['NID_AUT', 'NID_SES'] and 'naver.com' in c.get('domain', '')]
-                    if naver_login_cookies:
-                        logger.info(f"쿠키 기반 로그인 상태 확인됨 - {len(naver_login_cookies)}개 쿠키")
-                        logged_in_element = True  # 쿠키가 있으면 로그인으로 간주
-                    else:
-                        logger.info("네이버 로그인 쿠키 없음")
-                except asyncio.TimeoutError:
-                    logger.warning("쿠키 확인 타임아웃")
-                except Exception as e:
-                    logger.warning(f"쿠키 확인 실패: {e}")
+            # 3단계: 최종 로그인 상태 결정 (쿠키 우선)
+            if cookie_login_status:
+                # 쿠키가 있으면 로그인으로 간주 (DOM 실패해도 OK)
+                if not dom_login_status:
+                    logger.info("쿠키는 유효하나 DOM 요소 확인 실패 - 쿠키 기반으로 로그인 상태 판단")
+                logged_in_element = True
+            else:
+                # 쿠키가 없으면 DOM 결과에 의존
+                logged_in_element = dom_login_status
             
             if logged_in_element:
                 self.is_logged_in = True
@@ -1262,29 +1339,66 @@ class NaverSession:
             return False
     
     async def get_cafe_posts(self, club_id: str, user_id: str) -> Optional[list]:
-        """카페 사용자의 게시물 목록 가져오기"""
+        """카페 사용자의 게시물 목록 가져오기 (세션 추적 로깅 포함)"""
         try:
+            # 세션 추적 로깅 시작
+            logger.debug(f"🔍 카페 게시물 수집 시작 - club_id: {club_id}, user_id: {user_id}")
+            
             # 브라우저와 페이지 유효성 확인
             if not self.page or not self.browser:
-                logger.debug("네이버 브라우저 세션이 없음")
+                logger.warning("❌ 네이버 브라우저 세션이 없음 - 카페 모니터링 불가")
                 return None
+            
+            # 현재 브라우저 쿠키 상태 로깅
+            try:
+                cookies = await self.page.context.cookies()
+                naver_cookies = [c for c in cookies if 'naver.com' in c.get('domain', '')]
+                logger.debug(f"🍪 현재 네이버 쿠키 개수: {len(naver_cookies)}")
+                
+                # 중요한 로그인 쿠키 확인
+                login_cookies = [c['name'] for c in naver_cookies if c.get('name') in ['NID_AUT', 'NID_SES']]
+                if login_cookies:
+                    logger.debug(f"🔑 로그인 관련 쿠키: {login_cookies}")
+                else:
+                    logger.warning("⚠️ 로그인 관련 쿠키가 없음")
+            except Exception as cookie_error:
+                logger.debug(f"쿠키 확인 실패: {cookie_error}")
             
             # 로그인 상태 확인 (캐시된 상태 우선 사용)
             if not self.is_logged_in:
+                logger.debug("🔄 캐시된 로그인 상태가 False - 실제 상태 재확인")
                 # 실제 로그인 상태 재확인
                 try:
                     if not await self.check_login_status():
-                        logger.debug("네이버 로그인 상태 아님")
+                        logger.warning("❌ 네이버 로그인 상태 아님 - 카페 접근 불가")
                         return None
-                except Exception:
-                    logger.debug("네이버 로그인 상태 확인 불가")
+                    else:
+                        logger.info("✅ 로그인 상태 재확인됨")
+                except Exception as login_check_error:
+                    logger.warning(f"❌ 네이버 로그인 상태 확인 불가: {login_check_error}")
                     return None
+            else:
+                logger.debug("✅ 캐시된 로그인 상태 유효")
             
             url = f"https://cafe.naver.com/ca-fe/cafes/{club_id}/members/{user_id}"
+            logger.debug(f"🌐 카페 페이지 접근: {url}")
             await self.page.goto(url, wait_until="networkidle")
             
+            # 현재 페이지 URL 확인 (리다이렉트 등 확인용)
+            current_url = self.page.url
+            if "nidlogin" in current_url:
+                logger.error("❌ 로그인 페이지로 리다이렉트됨 - 세션이 유효하지 않음")
+                return None
+            
+            logger.debug(f"✅ 카페 페이지 접근 성공: {current_url}")
+            
             # 게시물 목록 요소 대기 (새로운 구조에 맞게 수정)
-            await self.page.wait_for_selector('tbody tr', timeout=10000)
+            try:
+                await self.page.wait_for_selector('tbody tr', timeout=10000)
+                logger.debug("📋 게시물 목록 요소 로드 완료")
+            except Exception as selector_error:
+                logger.error(f"❌ 게시물 목록 요소 로드 실패: {selector_error}")
+                return None
             
             # 게시물 정보 추출 (새로운 HTML 구조에 맞게 수정)
             posts = await self.page.evaluate("""
@@ -1325,7 +1439,16 @@ class NaverSession:
                 }
             """)
             
-            logger.info(f"카페 게시물 {len(posts)}개 조회 완료")
+            # 세션 추적 로깅 - 결과 요약
+            if posts:
+                logger.info(f"✅ 카페 게시물 {len(posts)}개 조회 완료")
+                logger.debug(f"📝 최신 게시물: {posts[0]['title'][:30]}... ({posts[0]['date']})")
+                
+                # 세션 유효성 재확인 (성공적으로 데이터를 가져왔으므로 로그인 상태 갱신)
+                self.is_logged_in = True
+            else:
+                logger.warning("⚠️ 게시물 목록이 비어있음 - 세션 문제일 가능성")
+            
             return posts
             
         except Exception as e:
@@ -1680,6 +1803,9 @@ class NaverSession:
                             
                             if my_info_found and not login_btn_exists:
                                 logger.info("🎉 네이버 로그인 완료 감지!")
+                                
+                                # 세션 데이터를 메인 헤드리스 브라우저로 동기화
+                                await self.sync_session_to_main_browser()
                                 
                                 # 3초 대기 후 브라우저 정리
                                 await asyncio.sleep(3)

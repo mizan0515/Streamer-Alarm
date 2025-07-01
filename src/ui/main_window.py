@@ -1125,7 +1125,7 @@ class MainWindow:
             return "unknown"
     
     def relogin_naver(self):
-        """네이버 재로그인 (강화된 중복 방지 및 안정성 개선)"""
+        """네이버 재로그인 (시스템 트레이와 동일한 방식으로 변경)"""
         
         # 현재 시간 기반 중복 방지
         current_time = time.time()
@@ -1151,146 +1151,149 @@ class MainWindow:
         st.session_state.last_naver_login_time = current_time
         
         try:
-            login_request_file = os.path.join(config.data_dir, "login_request.json")
+            # 시스템 트레이와 동일한 방식으로 직접 로그인 실행
+            logger.info("UI에서 네이버 로그인 요청 - 시스템 트레이와 동일한 방식 사용")
             
-            # 모든 기존 로그인 요청 파일 강제 정리
-            for attempt in range(3):  # 최대 3회 시도
+            # UI에서 직접 브라우저 로그인 실행 (별도 스레드)
+            import threading
+            
+            def run_ui_login():
                 try:
-                    if os.path.exists(login_request_file):
-                        os.remove(login_request_file)
-                    time.sleep(0.1)  # 파일 시스템 동기화 대기
-                    break
-                except Exception as e:
-                    if attempt == 2:  # 마지막 시도
-                        logger.warning(f"기존 로그인 요청 파일 삭제 실패: {e}")
-                    time.sleep(0.2)
-            
-            # 고유한 요청 ID 생성
-            request_id = f"login_{int(time.time() * 1000)}"
-            
-            # 로그인 요청 파일 생성
-            login_request = {
-                "action": "relogin_naver",
-                "request_id": request_id,
-                "timestamp": datetime.now().isoformat(),
-                "status": "requested"
-            }
-            
-            # 안전한 파일 쓰기 (Windows 호환)
-            try:
-                self._safe_write_json(login_request_file, login_request)
-                logger.info(f"네이버 로그인 요청 파일 생성 성공 (ID: {request_id})")
-            except Exception as e:
-                logger.error(f"네이버 로그인 요청 파일 생성 실패 (ID: {request_id}): {e}")
-                st.error(f"❌ 네이버 로그인 요청 파일 생성 실패: {str(e)}")
-                return
-            
-            logger.info("네이버 재로그인 요청이 생성되었습니다")
-            
-            # 진행률 표시기 추가
-            st.info("📤 네이버 로그인 요청을 전송했습니다...")
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            # 더 세밀한 확인 (최대 15초)
-            max_wait_time = 15
-            check_interval = 0.5
-            checks_done = 0
-            max_checks = int(max_wait_time / check_interval)
-            
-            for i in range(max_checks):
-                time.sleep(check_interval)
-                checks_done += 1
-                progress = checks_done / max_checks
-                progress_bar.progress(progress)
-                
-                # 상태별 메시지 업데이트
-                if i < 4:  # 처음 2초
-                    status_text.text("🔄 메인 프로세스로 요청 전달 중...")
-                elif i < 8:  # 2-4초
-                    status_text.text("🔧 브라우저 세션 준비 중...")
-                elif i < 16:  # 4-8초
-                    status_text.text("🌐 네이버 로그인 페이지 로딩 중...")
-                else:  # 8초 이후
-                    status_text.text("🔐 로그인 창이 열렸을 수 있습니다...")
-                
-                # 파일 상태 확인
-                if os.path.exists(login_request_file):
+                    import asyncio
+                    logger.info("UI 네이버 로그인 스레드 시작")
+                    
+                    # 새 이벤트 루프 생성 (기존 루프와 충돌 방지)
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
                     try:
-                        with open(login_request_file, 'r', encoding='utf-8') as f:
-                            status = json.load(f)
+                        from src.browser.naver_session import naver_session
                         
-                        if status.get('status') == 'processing':
-                            progress_bar.progress(0.7)
-                            status_text.text("✅ 브라우저에서 로그인을 진행하세요...")
-                        elif status.get('status') == 'completed':
-                            progress_bar.progress(1.0)
-                            status_text.empty()
-                            st.success("✅ 네이버 로그인이 완료되었습니다!")
-                            # 성공 시 즉시 세션 상태 정리
-                            st.session_state.naver_login_in_progress = False
-                            st.session_state.last_naver_login_time = time.time()
-                            logger.debug("네이버 로그인 성공 - 세션 상태 즉시 정리")
-                            return
-                        elif status.get('status') == 'failed':
-                            progress_bar.progress(1.0)
-                            status_text.empty()
-                            error_msg = status.get('error', '알 수 없는 오류')
-                            st.error(f"❌ 네이버 로그인 실패: {error_msg}")
-                            st.info("💡 메인 애플리케이션의 트레이 아이콘을 우클릭하여 '네이버 로그인'을 시도해보세요.")
-                            # 실패 시에도 세션 상태 정리
-                            st.session_state.naver_login_in_progress = False
-                            st.session_state.last_naver_login_time = time.time()
-                            logger.debug("네이버 로그인 실패 - 세션 상태 즉시 정리")
-                            return
+                        # UI에서 로그인 버튼을 클릭한 경우 항상 브라우저 창을 표시
+                        logger.info("UI에서 네이버 로그인 요청 - 브라우저 창을 표시합니다.")
+                        
+                        # 타임아웃 적용 (시스템 트레이와 동일)
+                        try:
+                            login_task = naver_session.login(force_visible=True)
+                            result = loop.run_until_complete(asyncio.wait_for(login_task, timeout=30.0))
+                            logger.info(f"UI 로그인 완료, 결과: {result}")
+                        except asyncio.TimeoutError:
+                            logger.error("UI 네이버 로그인 타임아웃 (30초)")
+                            result = False
+                        
+                        # 결과를 파일로 저장 (UI 상태 업데이트용)
+                        login_result_file = os.path.join(config.data_dir, "ui_login_result.json")
+                        result_data = {
+                            "action": "ui_login_result",
+                            "status": "completed" if result else "failed",
+                            "timestamp": datetime.now().isoformat(),
+                            "success": result
+                        }
+                        
+                        with open(login_result_file, 'w', encoding='utf-8') as f:
+                            json.dump(result_data, f, ensure_ascii=False, indent=2)
+                        
+                        if result:
+                            logger.info("UI 네이버 로그인 성공")
+                        else:
+                            logger.warning("UI 네이버 로그인 실패 또는 취소됨")
+                            
+                    finally:
+                        loop.close()
+                        
+                except Exception as e:
+                    logger.error(f"UI 네이버 로그인 스레드 오류: {e}")
+                    
+                    # 오류 결과 저장
+                    try:
+                        login_result_file = os.path.join(config.data_dir, "ui_login_result.json")
+                        error_data = {
+                            "action": "ui_login_result",
+                            "status": "error",
+                            "timestamp": datetime.now().isoformat(),
+                            "error": str(e),
+                            "success": False
+                        }
+                        
+                        with open(login_result_file, 'w', encoding='utf-8') as f:
+                            json.dump(error_data, f, ensure_ascii=False, indent=2)
                     except:
-                        continue
-                else:
-                    # 파일이 삭제되었다면 처리 완료 가능성
-                    if i > 8:  # 4초 이후부터 확인
-                        progress_bar.progress(1.0)
-                        status_text.empty()
-                        st.success("✅ 네이버 로그인 요청이 처리되었습니다!")
-                        st.info("🌐 브라우저에서 로그인 창이 열렸는지 확인해주세요.")
-                        # 파일 삭제된 경우에도 세션 상태 정리
-                        st.session_state.naver_login_in_progress = False
-                        st.session_state.last_naver_login_time = time.time()
-                        logger.debug("네이버 로그인 파일 삭제 확인 - 세션 상태 즉시 정리")
-                        return
+                        pass
             
-            # 타임아웃 처리
-            progress_bar.progress(1.0)
-            status_text.empty()
-            st.warning("⏰ 네이버 로그인 요청 응답 시간 초과")
-            st.info("💡 메인 시스템이 실행 중인지 확인하고 다시 시도해주세요.")
-            st.info("🔧 또는 메인 애플리케이션의 트레이 아이콘을 우클릭하여 '네이버 로그인'을 선택해주세요.")
+            # 별도 스레드에서 로그인 실행
+            login_thread = threading.Thread(target=run_ui_login, daemon=True)
+            login_thread.start()
             
-            # 정리
+            st.success("✅ 네이버 로그인 창을 열었습니다. 로그인을 완료해주세요.")
+            logger.info("UI 네이버 로그인 요청 완료 - 별도 스레드에서 실행 중")
+            
+            # 3초 후 자동으로 상태 갱신하도록 설정
+            time.sleep(0.1)  # 파일 생성 대기
+            self.start_login_monitoring()
+            
+        except Exception as e:
+            logger.error(f"UI 네이버 로그인 시작 실패: {e}")
+            st.error(f"❌ 네이버 로그인 시작 중 오류가 발생했습니다: {str(e)}")
+        finally:
+            # 상태 플래그 해제는 로그인 모니터링에서 처리
+            pass
+    
+    def start_login_monitoring(self):
+        """로그인 결과 모니터링 시작"""
+        # 세션 상태에 모니터링 플래그 설정
+        st.session_state.login_monitoring_active = True
+        st.session_state.login_monitoring_start = time.time()
+        
+    def check_login_result(self):
+        """UI 로그인 결과 확인"""
+        if not getattr(st.session_state, 'login_monitoring_active', False):
+            return None
+            
+        login_result_file = os.path.join(config.data_dir, "ui_login_result.json")
+        
+        # 모니터링 시작 후 60초가 지나면 자동 종료
+        if time.time() - getattr(st.session_state, 'login_monitoring_start', 0) > 60:
+            st.session_state.login_monitoring_active = False
+            st.session_state.naver_login_in_progress = False
             try:
-                if os.path.exists(login_request_file):
-                    os.remove(login_request_file)
+                if os.path.exists(login_result_file):
+                    os.remove(login_result_file)
             except:
                 pass
-                
-        except Exception as e:
-            logger.error(f"네이버 재로그인 요청 실패: {e}")
-            st.error(f"❌ 네이버 재로그인 요청에 실패했습니다: {str(e)}")
-            st.info("💡 대신 메인 애플리케이션의 트레이 아이콘을 우클릭하여 '네이버 로그인'을 선택해주세요.")
+            return None
         
-        finally:
-            # 항상 진행 상태 플래그 해제 (강화된 정리)
+        if os.path.exists(login_result_file):
             try:
+                with open(login_result_file, 'r', encoding='utf-8') as f:
+                    result = json.load(f)
+                
+                # 결과 처리
+                if result.get('status') == 'completed' and result.get('success'):
+                    st.success("✅ 네이버 로그인이 완료되었습니다!")
+                    # 로그인 상태 캐시 무효화
+                    if 'naver_login_cache' in st.session_state:
+                        del st.session_state.naver_login_cache
+                elif result.get('status') == 'failed':
+                    st.warning("⚠️ 네이버 로그인이 취소되었거나 실패했습니다.")
+                elif result.get('status') == 'error':
+                    st.error(f"❌ 로그인 중 오류 발생: {result.get('error', '알 수 없는 오류')}")
+                
+                # 모니터링 종료
+                st.session_state.login_monitoring_active = False
                 st.session_state.naver_login_in_progress = False
-                st.session_state.last_naver_login_time = time.time()
-                logger.debug("네이버 로그인 세션 상태 정리 완료")
-            except Exception as cleanup_error:
-                logger.warning(f"네이버 로그인 세션 상태 정리 중 오류: {cleanup_error}")
-                # 강제 리셋
+                
+                # 결과 파일 삭제
                 try:
-                    if hasattr(st.session_state, 'naver_login_in_progress'):
-                        del st.session_state.naver_login_in_progress
+                    os.remove(login_result_file)
                 except:
                     pass
+                    
+                return result
+                
+            except Exception as e:
+                logger.error(f"로그인 결과 파일 읽기 실패: {e}")
+        
+        return None
     
     def save_settings_with_realtime_update(self, check_interval, show_notifications, start_with_windows, minimize_to_tray):
         """실시간 설정 저장"""

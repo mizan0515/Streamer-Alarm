@@ -133,6 +133,10 @@ class ChzzkMonitor:
                 # 프로필 이미지 URL 가져오기
                 profile_image_url = await self.get_channel_profile_image(chzzk_id)
                 
+                # 스트리머 데이터에 프로필 이미지 URL 저장
+                if profile_image_url:
+                    await self.update_streamer_profile_image(streamer_name, profile_image_url)
+                
                 # 알림 표시
                 await NotificationManager.show_live_notification(
                     streamer_name, 
@@ -179,6 +183,20 @@ class ChzzkMonitor:
             logger.warning(f"프로필 이미지 URL 획득 실패 ({chzzk_id}): {e}")
         
         return None
+    
+    async def update_streamer_profile_image(self, streamer_name: str, profile_image_url: str):
+        """스트리머 데이터에 프로필 이미지 URL 업데이트"""
+        try:
+            streamers = config.get_streamers()
+            if streamer_name in streamers:
+                # 현재 저장된 프로필 이미지 URL과 다른 경우에만 업데이트
+                current_url = streamers[streamer_name].get('profile_image')
+                if current_url != profile_image_url:
+                    streamers[streamer_name]['profile_image'] = profile_image_url
+                    config._save_streamers(streamers)
+                    logger.debug(f"{streamer_name} 프로필 이미지 URL 업데이트: {profile_image_url}")
+        except Exception as e:
+            logger.warning(f"{streamer_name} 프로필 이미지 URL 업데이트 실패: {e}")
     
     async def get_streamer_status(self, streamer_name: str) -> Optional[Dict[str, Any]]:
         """특정 스트리머의 현재 상태 반환"""

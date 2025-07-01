@@ -3,6 +3,7 @@ from win11toast import toast
 from PIL import Image
 import os
 import tempfile
+import hashlib
 from typing import Optional
 from ..utils.logger import logger
 from .http_client import get_image_client
@@ -15,9 +16,10 @@ class NotificationManager:
             client = await get_image_client()
             response = await client.get(url)  # ← 들여쓰기 수정
             if response.status_code == 200:   # ← 들여쓰기 수정
-                # 임시 파일 생성
+                # 임시 파일 생성 (결정적 해시 사용)
                 temp_dir = tempfile.gettempdir()
-                temp_file = os.path.join(temp_dir, f"profile_{hash(url)}.jpg")
+                url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()[:8]
+                temp_file = os.path.join(temp_dir, f"profile_{url_hash}.jpg")
 
                 # 이미지 저장 및 크기 조정
                 with open(temp_file, 'wb') as f:

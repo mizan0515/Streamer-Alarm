@@ -21,8 +21,7 @@ from src.monitors.twitter_monitor import twitter_monitor
 from src.monitors.cafe_monitor import cafe_monitor
 from src.utils.logger import logger
 from src.config import config
-from src.utils.performance import performance_manager
-from src.utils.memory import memory_manager, resource_monitor
+from src.utils.cache_cleaner import cache_cleaner
 from src.utils.http_client import close_all_clients
 
 
@@ -31,8 +30,10 @@ class StreamerAlarmApp:
         self.tray_icon: Optional[pystray.Icon] = None
         self.streamlit_process: Optional[subprocess.Popen] = None
         self.monitoring_task: Optional[asyncio.Task] = None
+        self.cache_cleanup_task: Optional[asyncio.Task] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.is_running = False
+        self.last_cache_cleanup = 0
         
     def create_tray_icon(self) -> Image.Image:
         """시스템 트레이 아이콘 생성"""
@@ -131,6 +132,10 @@ class StreamerAlarmApp:
         # 모니터링 태스크 취소
         if self.monitoring_task and not self.monitoring_task.done():
             self.monitoring_task.cancel()
+        
+        # 캐시 정리 태스크 취소
+        if self.cache_cleanup_task and not self.cache_cleanup_task.done():
+            self.cache_cleanup_task.cancel()
         
         # Streamlit 서버 중지
         self.stop_streamlit_server()
@@ -290,6 +295,9 @@ class StreamerAlarmApp:
             self.is_running = True
             self.monitoring_task = asyncio.create_task(self.monitor_all_platforms())
             
+            # 캐시 정리 태스크 시작
+            self.cache_cleanup_task = asyncio.create_task(self.periodic_cache_cleanup())
+            
             # 프로그램이 종료될 때까지 대기
             while self.is_running:
                 await asyncio.sleep(1)
@@ -304,6 +312,14 @@ class StreamerAlarmApp:
                 self.monitoring_task.cancel()
                 try:
                     await self.monitoring_task
+                except asyncio.CancelledError:
+                    pass
+            
+            # 캐시 정리 태스크 취소
+            if self.cache_cleanup_task and not self.cache_cleanup_task.done():
+                self.cache_cleanup_task.cancel()
+                try:
+                    await self.cache_cleanup_task
                 except asyncio.CancelledError:
                     pass
     
@@ -488,6 +504,44 @@ class StreamerAlarmApp:
                         
         except Exception as e:
             logger.debug(f"UI 신호 확인 중 오류 (무시됨): {e}")
+    
+    async def periodic_cache_cleanup(self):
+        """주기적 캐시 정리 (설정 파일 기반)"""
+        cache_cleanup_interval = config.get_settings().get('cache_cleanup_interval', 3600)  # 기본 1시간
+        
+        while self.is_running:
+            try:
+                current_time = time.time()
+                
+                # 캐시 정리 간격 확인
+                if current_time - self.last_cache_cleanup >= cache_cleanup_interval:
+                    logger.info("주기적 캐시 정리 시작")
+                    
+                    try:
+                        # 비동기 캐시 정리 실행
+                        success, result = await cache_cleaner.cleanup_all()
+                        
+                        if success:
+                            logger.info(f"캐시 정리 완료: 브라우저 캐시 {result['cache_freed_mb']}MB, 임시파일 {result['temp_deleted']}개")
+                        else:
+                            logger.warning("일부 캐시 정리 작업에서 오류 발생")
+                            
+                        self.last_cache_cleanup = current_time
+                        
+                    except Exception as cleanup_error:
+                        logger.error(f"캐시 정리 중 오류: {cleanup_error}")
+                        # 오류 발생 시에도 타이머 업데이트 (무한 재시도 방지)
+                        self.last_cache_cleanup = current_time
+                
+                # 10분마다 캐시 정리 필요 여부 확인
+                await asyncio.sleep(600)
+                
+            except asyncio.CancelledError:
+                logger.info("캐시 정리 태스크가 취소되었습니다")
+                break
+            except Exception as e:
+                logger.error(f"캐시 정리 태스크 중 오류: {e}")
+                await asyncio.sleep(300)  # 오류 발생 시 5분 후 재시도
     
     def handle_naver_login_request(self, request_data):
         """네이버 로그인 요청 처리 (별도 스레드) - 개선된 버전"""

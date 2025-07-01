@@ -81,7 +81,8 @@ class Config:
             "notification_sound": True,
             "minimize_to_tray": True,
             "last_login_check": None,
-            "theme": "dark"
+            "theme": "dark",
+            "cache_cleanup_interval": 3600  # seconds (1 hour)
         }
     
     def get_streamers(self) -> Dict[str, Any]:

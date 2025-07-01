@@ -10,7 +10,6 @@ from datetime import datetime
 from ..config import config
 from ..utils.logger import logger
 from .styles import load_css
-from .components import StreamerTab, NotificationTab, SettingsTab
 
 class MainWindow:
     def __init__(self):
@@ -125,8 +124,6 @@ class MainWindow:
         # 라이브 중인 스트리머 수 반환
         return len([name for name, data in st.session_state.streamer_data_cache.items() if data.get('is_live', False)])
     
-    # 더 이상 사용하지 않는 함수 (URL 직접 사용으로 변경)
-    # def get_profile_image_path(self, name: str, data: dict) -> str:
     
     def display_cached_profile_image(self, profile_url: str, width: int = 64):
         """캐시된 프로필 이미지 표시"""
@@ -139,23 +136,6 @@ class MainWindow:
             avatar_size = width if width else 64
             st.markdown(f'<div style="width: {avatar_size}px; height: {avatar_size}px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: {avatar_size//2}px; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">👤</div>', unsafe_allow_html=True)
 
-    async def url_to_base64(self, image_url: str) -> str:
-        """URL 이미지를 Base64로 변환 (HTML 삽입용)"""
-        try:
-            from ..utils.http_client import get_image_client
-            import base64
-            
-            client = await get_image_client()
-            response = await client.get(image_url)
-            
-            if response.status_code == 200:
-                return base64.b64encode(response.content).decode('utf-8')
-            else:
-                logger.debug(f"이미지 다운로드 실패: {response.status_code}")
-                return ''
-        except Exception as e:
-            logger.debug(f"URL to Base64 변환 실패: {e}")
-            return ''
     
     def url_to_base64_sync(self, image_url: str) -> str:
         """URL 이미지를 Base64로 변환 (동기 버전, 크기 최적화)"""
@@ -198,8 +178,6 @@ class MainWindow:
             logger.debug(f"URL to Base64 변환 실패: {e}")
             return ''
     
-    # 더 이상 사용하지 않는 함수 (URL 직접 사용으로 변경)
-    # def image_to_base64(self, image_path: str) -> str:
     
     def cleanup_old_cache_files(self):
         """사용하지 않는 프로필 캐시 파일들 정리"""

@@ -12,6 +12,8 @@ import subprocess
 import webbrowser
 import json
 import time
+import tempfile
+import psutil
 from typing import Optional
 from datetime import datetime
 import pystray
@@ -34,6 +36,54 @@ class StreamerAlarmApp:
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.is_running = False
         self.last_cache_cleanup = 0
+        self.lock_file_path = os.path.join(tempfile.gettempdir(), "streamer_alarm.lock")
+    
+    def is_already_running(self) -> bool:
+        """다른 인스턴스가 이미 실행 중인지 확인"""
+        try:
+            if os.path.exists(self.lock_file_path):
+                with open(self.lock_file_path, 'r') as f:
+                    pid = int(f.read().strip())
+                
+                # PID가 유효한지 확인
+                if psutil.pid_exists(pid):
+                    try:
+                        process = psutil.Process(pid)
+                        # 프로세스 이름이 StreamerAlarm인지 확인
+                        if 'StreamerAlarm' in process.name() or 'python' in process.name():
+                            logger.warning(f"애플리케이션이 이미 실행 중입니다 (PID: {pid})")
+                            return True
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                
+                # 유효하지 않은 PID인 경우 락 파일 삭제
+                os.remove(self.lock_file_path)
+            
+            return False
+            
+        except Exception as e:
+            logger.debug(f"중복 실행 체크 중 오류 (무시됨): {e}")
+            return False
+    
+    def create_lock_file(self) -> bool:
+        """락 파일 생성"""
+        try:
+            with open(self.lock_file_path, 'w') as f:
+                f.write(str(os.getpid()))
+            logger.debug(f"락 파일 생성: {self.lock_file_path}")
+            return True
+        except Exception as e:
+            logger.error(f"락 파일 생성 실패: {e}")
+            return False
+    
+    def remove_lock_file(self):
+        """락 파일 제거"""
+        try:
+            if os.path.exists(self.lock_file_path):
+                os.remove(self.lock_file_path)
+                logger.debug("락 파일 제거됨")
+        except Exception as e:
+            logger.debug(f"락 파일 제거 중 오류 (무시됨): {e}")
         
     def create_tray_icon(self) -> Image.Image:
         """시스템 트레이 아이콘 생성"""
@@ -46,21 +96,41 @@ class StreamerAlarmApp:
     def start_streamlit_server(self):
         """Streamlit 서버 시작"""
         try:
+            # 프로젝트 루트 디렉토리 확정 (main.py가 있는 디렉토리)
+            project_root = os.path.dirname(os.path.abspath(__file__))
+            streamlit_script = os.path.join(project_root, "streamlit_run.py")
+            
+            # PyInstaller 환경에서 실행 시 절대 경로 사용
+            if getattr(sys, 'frozen', False):
+                # PyInstaller로 빌드된 실행 파일인 경우
+                project_root = os.path.dirname(sys.executable)
+                streamlit_script = os.path.join(sys._MEIPASS, "streamlit_run.py")
+                python_executable = sys.executable
+            else:
+                # 일반 Python 스크립트 실행인 경우
+                python_executable = sys.executable
+            
             # Streamlit 실행
             cmd = [
-                sys.executable, "-m", "streamlit", "run", 
-                "streamlit_run.py",
+                python_executable, "-m", "streamlit", "run", 
+                streamlit_script,
                 "--server.port=8501",
                 "--server.headless=true",
                 "--server.address=localhost",
                 "--browser.gatherUsageStats=false"
             ]
             
+            # PyInstaller 환경에서는 창 숨김 옵션 추가
+            creation_flags = 0
+            if getattr(sys, 'frozen', False):
+                creation_flags = subprocess.CREATE_NO_WINDOW
+            
             self.streamlit_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                cwd=os.getcwd()
+                cwd=project_root,
+                creationflags=creation_flags
             )
             
             logger.info("Streamlit 서버가 시작되었습니다 (http://localhost:8501)")
@@ -143,6 +213,9 @@ class StreamerAlarmApp:
         # 트레이 아이콘 제거
         if self.tray_icon:
             self.tray_icon.stop()
+        
+        # 락 파일 제거
+        self.remove_lock_file()
         
         # 이벤트 루프 중지
         if self.loop and self.loop.is_running():
@@ -325,6 +398,16 @@ class StreamerAlarmApp:
     
     def run(self):
         """애플리케이션 실행"""
+        # 중복 실행 체크
+        if self.is_already_running():
+            logger.error("애플리케이션이 이미 실행 중입니다. 종료합니다.")
+            return
+        
+        # 락 파일 생성
+        if not self.create_lock_file():
+            logger.error("락 파일 생성에 실패했습니다. 종료합니다.")
+            return
+        
         # 신호 핸들러 설정
         def signal_handler(signum, frame):
             # 미사용 매개변수 처리
@@ -375,6 +458,7 @@ class StreamerAlarmApp:
                     self.loop.close()
             
             self.stop_streamlit_server()
+            self.remove_lock_file()
 
     async def initialize_naver_session(self):
         """네이버 세션 초기화"""
@@ -401,13 +485,17 @@ class StreamerAlarmApp:
             # 로그인 요청 확인
             login_request_file = os.path.join(config.data_dir, "login_request.json")
             if os.path.exists(login_request_file):
+                logger.debug(f"📋 UI 로그인 요청 파일 발견: {login_request_file}")
                 try:
                     with open(login_request_file, 'r', encoding='utf-8') as f:
                         request_data = json.load(f)
                     
+                    logger.debug(f"📄 요청 데이터: {request_data}")
+                    
                     if request_data.get('action') == 'relogin_naver' and request_data.get('status') == 'requested':
                         request_id = request_data.get('request_id', 'unknown')
-                        logger.info(f"UI로부터 네이버 재로그인 요청 수신 (ID: {request_id})")
+                        source = request_data.get('source', 'unknown')
+                        logger.info(f"🎯 UI로부터 네이버 재로그인 요청 수신 (ID: {request_id}, Source: {source})")
                         
                         # 즉시 처리 중 상태로 변경 (중복 처리 방지)
                         request_data['status'] = 'processing'
@@ -415,15 +503,24 @@ class StreamerAlarmApp:
                         
                         # 안전한 파일 쓰기
                         self._safe_write_json(login_request_file, request_data)
+                        logger.debug(f"📝 요청 상태를 'processing'으로 업데이트 (ID: {request_id})")
                         
                         # 네이버 로그인 실행 (별도 스레드에서)
-                        threading.Thread(target=self.handle_naver_login_request, args=(request_data,), daemon=True).start()
+                        login_thread = threading.Thread(target=self.handle_naver_login_request, args=(request_data,), daemon=True)
+                        login_thread.start()
+                        logger.info(f"🚀 로그인 처리 스레드 시작됨 (ID: {request_id})")
+                        
+                    else:
+                        logger.debug(f"📋 요청이 처리 조건에 맞지 않음: action={request_data.get('action')}, status={request_data.get('status')}")
                         
                 except Exception as e:
-                    logger.warning(f"로그인 요청 처리 실패: {e}")
+                    logger.warning(f"💥 로그인 요청 처리 실패: {e}")
+                    import traceback
+                    logger.debug(f"요청 처리 오류 스택트레이스:\n{traceback.format_exc()}")
                     # 오류 발생 시 요청 파일 삭제
                     try:
                         os.remove(login_request_file)
+                        logger.debug("🗑️ 오류 발생으로 요청 파일 삭제")
                     except:
                         pass
             
@@ -570,34 +667,51 @@ class StreamerAlarmApp:
             asyncio.set_event_loop(loop)
             
             try:
-                # UI 로그인 요청은 시스템 트레이와 동일하게 처리 (상태 확인 건너뛰기)
-                logger.info("UI에서 네이버 로그인 요청 - 시스템 트레이와 동일한 방식으로 처리")
-                logger.info("로그인 상태 확인 건너뛰고 즉시 브라우저 창 표시")
+                # 요청 소스 확인
+                request_source = request_data.get('source', 'unknown')
+                logger.info(f"🔍 네이버 로그인 요청 소스: {request_source}")
+                logger.info("🚀 시스템 트레이와 동일한 방식으로 처리 시작")
+                logger.info("🎯 로그인 상태 확인 건너뛰고 즉시 브라우저 창 표시")
                 
                 try:
-                    logger.info("force_visible=True로 네이버 로그인 호출 시작")
+                    login_start_time = time.time()
+                    logger.info("🌐 force_visible=True로 네이버 로그인 호출 시작")
+                    logger.debug(f"naver_session 인스턴스: {naver_session}")
                     
                     # 헤드리스 모드 해제하여 로그인 창 표시 (타임아웃 적용)
                     login_task = naver_session.login(force_visible=True)
                     result = loop.run_until_complete(asyncio.wait_for(login_task, timeout=30.0))
-                    logger.info(f"네이버 로그인 호출 완료, 결과: {result}")
+                    
+                    login_duration = time.time() - login_start_time
+                    logger.info(f"🌐 네이버 로그인 호출 완료: {result} (소요시간: {login_duration:.2f}초)")
                     
                 except asyncio.TimeoutError:
-                    logger.error("네이버 로그인 호출 타임아웃 (30초)")
+                    login_duration = time.time() - login_start_time
+                    logger.error(f"⏰ 네이버 로그인 호출 타임아웃 (30초, 실제: {login_duration:.2f}초)")
                     result = False
                 except Exception as e:
-                    logger.error(f"네이버 로그인 처리 중 오류: {e}")
+                    login_duration = time.time() - login_start_time
+                    logger.error(f"💥 네이버 로그인 처리 중 오류: {e} (소요시간: {login_duration:.2f}초)")
+                    import traceback
+                    logger.debug(f"로그인 오류 스택트레이스:\n{traceback.format_exc()}")
                     result = False
                 
                 # 결과에 따른 상태 업데이트
                 try:
                     if result:
-                        logger.info("네이버 로그인 성공")
+                        logger.info("✅ 네이버 로그인 성공 - 세션 사용 검증 시작")
+                        
+                        # 로그인 성공 후 즉시 카페 접근 테스트
+                        cafe_test_result = loop.run_until_complete(
+                            self._test_cafe_session_access(loop, naver_session, request_id)
+                        )
+                        
                         request_data['status'] = 'completed'
                         request_data['completed_at'] = datetime.now().isoformat()
                         request_data['message'] = '로그인 성공'
+                        request_data['cafe_test_result'] = cafe_test_result
                     else:
-                        logger.warning("네이버 로그인 실패 또는 취소됨")
+                        logger.warning("❌ 네이버 로그인 실패 또는 취소됨")
                         request_data['status'] = 'failed'
                         request_data['failed_at'] = datetime.now().isoformat()
                         request_data['error'] = '로그인 실패 또는 사용자 취소'
@@ -657,6 +771,117 @@ class StreamerAlarmApp:
                     os.remove(login_request_file)
                 except:
                     pass
+    
+    async def _test_cafe_session_access(self, loop, naver_session, request_id):
+        """로그인 후 카페 세션 접근 테스트"""
+        test_start = time.time()
+        logger.info(f"🧪 카페 세션 접근 테스트 시작 (ID: {request_id})")
+        
+        try:
+            # 기본 스트리머 설정에서 카페 ID가 있는 스트리머 찾기
+            streamers = config.get_streamers()
+            test_streamer = None
+            test_cafe_id = None
+            test_user_id = None
+            
+            logger.debug("카페 모니터링 가능한 스트리머 검색 중...")
+            for name, data in streamers.items():
+                if data.get('enabled', True) and data.get('cafe_user_id'):
+                    test_streamer = name
+                    test_cafe_id = data.get('cafe_club_id', config.cafe_club_id)
+                    test_user_id = data['cafe_user_id']
+                    logger.debug(f"테스트 대상 선정: {test_streamer} (cafe_id: {test_cafe_id}, user_id: {test_user_id})")
+                    break
+            
+            if not test_streamer:
+                logger.warning("❌ 카페 모니터링 설정된 스트리머 없음 - 세션 테스트 건너뜀")
+                return {
+                    "success": False,
+                    "reason": "no_cafe_streamers",
+                    "message": "카페 모니터링 설정된 스트리머 없음"
+                }
+            
+            logger.info(f"🎯 카페 접근 테스트 대상: {test_streamer}")
+            
+            # 카페 접근 테스트 실행
+            try:
+                cafe_test_start = time.time()
+                logger.debug("naver_session.get_cafe_posts() 호출 시작...")
+                
+                # asyncio 루프에서 실행
+                posts = loop.run_until_complete(
+                    asyncio.wait_for(
+                        naver_session.get_cafe_posts(test_cafe_id, test_user_id),
+                        timeout=10.0
+                    )
+                )
+                
+                cafe_test_time = time.time() - cafe_test_start
+                
+                if posts is not None:
+                    posts_count = len(posts) if isinstance(posts, list) else 0
+                    logger.info(f"✅ 카페 접근 성공: {posts_count}개 게시물 조회 (소요시간: {cafe_test_time:.2f}초)")
+                    
+                    # 게시물 정보 상세 로깅
+                    if posts_count > 0:
+                        latest_post = posts[0]
+                        logger.debug(f"최신 게시물: {latest_post.get('title', 'N/A')[:30]}...")
+                    
+                    test_result = {
+                        "success": True,
+                        "posts_count": posts_count,
+                        "test_duration": cafe_test_time,
+                        "streamer": test_streamer,
+                        "message": f"카페 접근 성공 ({posts_count}개 게시물)"
+                    }
+                else:
+                    logger.warning(f"⚠️ 카페 접근 실패: None 반환 (소요시간: {cafe_test_time:.2f}초)")
+                    test_result = {
+                        "success": False,
+                        "reason": "posts_none",
+                        "test_duration": cafe_test_time,
+                        "streamer": test_streamer,
+                        "message": "카페 게시물 조회 실패 (None 반환)"
+                    }
+                    
+            except asyncio.TimeoutError:
+                cafe_test_time = time.time() - cafe_test_start
+                logger.error(f"⏰ 카페 접근 테스트 타임아웃 (10초, 실제: {cafe_test_time:.2f}초)")
+                test_result = {
+                    "success": False,
+                    "reason": "timeout",
+                    "test_duration": cafe_test_time,
+                    "streamer": test_streamer,
+                    "message": "카페 접근 타임아웃"
+                }
+            except Exception as cafe_error:
+                cafe_test_time = time.time() - cafe_test_start
+                logger.error(f"💥 카페 접근 테스트 오류: {cafe_error} (소요시간: {cafe_test_time:.2f}초)")
+                test_result = {
+                    "success": False,
+                    "reason": "error",
+                    "error": str(cafe_error),
+                    "test_duration": cafe_test_time,
+                    "streamer": test_streamer,
+                    "message": f"카페 접근 오류: {str(cafe_error)}"
+                }
+            
+            total_test_time = time.time() - test_start
+            test_result["total_duration"] = total_test_time
+            
+            logger.info(f"🧪 카페 세션 접근 테스트 완료: {test_result['success']} (총 소요시간: {total_test_time:.2f}초)")
+            return test_result
+            
+        except Exception as e:
+            total_test_time = time.time() - test_start
+            logger.error(f"💥 카페 세션 테스트 전체 실패: {e} (소요시간: {total_test_time:.2f}초)")
+            return {
+                "success": False,
+                "reason": "test_error",
+                "error": str(e),
+                "total_duration": total_test_time,
+                "message": f"세션 테스트 실패: {str(e)}"
+            }
 
     def handle_notification_test_request(self, test_data):
         """알림 테스트 요청 처리 (별도 스레드) - 개선된 버전"""
@@ -894,4 +1119,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # PyInstaller로 빌드된 실행 파일에서 multiprocessing 문제 방지
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

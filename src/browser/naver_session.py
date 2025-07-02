@@ -436,13 +436,16 @@ class NaverSession:
             
             for selector in login_check_selectors:
                 try:
-                    # 타임아웃을 5초로 증가 (1초 → 5초)
-                    element = await self.page.wait_for_selector(selector, timeout=5000, state="attached")
+                    # 타임아웃을 3초로 단축하고 예외 처리 개선
+                    element = await asyncio.wait_for(
+                        self.page.wait_for_selector(selector, timeout=3000, state="attached"),
+                        timeout=3.0
+                    )
                     if element:
                         dom_login_status = True
                         logger.debug(f"DOM 로그인 상태 확인 성공: {selector}")
                         break
-                except Exception as e:
+                except (asyncio.TimeoutError, Exception) as e:
                     logger.debug(f"셀렉터 {selector} 확인 실패: {e}")
                     continue
             
@@ -1364,38 +1367,45 @@ class NaverSession:
             except Exception as cookie_error:
                 logger.debug(f"쿠키 확인 실패: {cookie_error}")
             
-            # 로그인 상태 확인 (캐시된 상태 우선 사용)
+            # 캐시된 로그인 상태만 확인 (실시간 확인 제거로 성능 개선)
             if not self.is_logged_in:
-                logger.debug("🔄 캐시된 로그인 상태가 False - 실제 상태 재확인")
-                # 실제 로그인 상태 재확인
-                try:
-                    if not await self.check_login_status():
-                        logger.warning("❌ 네이버 로그인 상태 아님 - 카페 접근 불가")
-                        return None
-                    else:
-                        logger.info("✅ 로그인 상태 재확인됨")
-                except Exception as login_check_error:
-                    logger.warning(f"❌ 네이버 로그인 상태 확인 불가: {login_check_error}")
-                    return None
+                logger.debug("❌ 캐시된 로그인 상태가 False - 카페 접근 건너뜀")
+                return None
             else:
                 logger.debug("✅ 캐시된 로그인 상태 유효")
             
             url = f"https://cafe.naver.com/ca-fe/cafes/{club_id}/members/{user_id}"
             logger.debug(f"🌐 카페 페이지 접근: {url}")
-            await self.page.goto(url, wait_until="networkidle")
+            
+            try:
+                # 페이지 로드 타임아웃을 5초로 단축
+                await asyncio.wait_for(
+                    self.page.goto(url, wait_until="domcontentloaded"),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"❌ 카페 페이지 로드 타임아웃 (5초) - {url}")
+                return None
             
             # 현재 페이지 URL 확인 (리다이렉트 등 확인용)
             current_url = self.page.url
             if "nidlogin" in current_url:
                 logger.error("❌ 로그인 페이지로 리다이렉트됨 - 세션이 유효하지 않음")
+                self.is_logged_in = False  # 캐시 업데이트
                 return None
             
             logger.debug(f"✅ 카페 페이지 접근 성공: {current_url}")
             
-            # 게시물 목록 요소 대기 (새로운 구조에 맞게 수정)
+            # 게시물 목록 요소 대기 (타임아웃 단축)
             try:
-                await self.page.wait_for_selector('tbody tr', timeout=10000)
+                await asyncio.wait_for(
+                    self.page.wait_for_selector('tbody tr', timeout=3000),
+                    timeout=3.0
+                )
                 logger.debug("📋 게시물 목록 요소 로드 완료")
+            except asyncio.TimeoutError:
+                logger.warning("❌ 게시물 목록 요소 로드 타임아웃 (3초)")
+                return None
             except Exception as selector_error:
                 logger.error(f"❌ 게시물 목록 요소 로드 실패: {selector_error}")
                 return None

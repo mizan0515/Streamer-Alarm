@@ -1,7 +1,7 @@
 import asyncio
 import httpx
 import feedparser
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Any
 from datetime import datetime
 from ..config import config
 from ..utils.logger import logger
@@ -145,10 +145,10 @@ class TwitterMonitor:
             # 이전 트윗 ID들 가져오기
             previous_tweet_ids = self.last_tweet_ids.get(streamer_name, set())
             
-            # 첫 번째 체크인 경우, 현재 트윗들을 기준으로 설정하고 알림 안함
+            # 첫 번째 체크인 경우, 현재 트윗들을 기준으로 설정 (알림 발송하지 않음)
             if self.first_check or not previous_tweet_ids:
                 self.last_tweet_ids[streamer_name] = current_tweet_ids
-                logger.info(f"{streamer_name} 트위터 기준 트윗 {len(current_tweet_ids)}개 설정")
+                logger.info(f"{streamer_name} 트위터 기준 트윗 {len(current_tweet_ids)}개 설정 (첫 체크 - 알림 없음)")
                 return
             
             # 새 트윗 찾기
@@ -286,6 +286,44 @@ class TwitterMonitor:
     def get_streamer_tweet_count(self, streamer_name: str) -> int:
         """특정 스트리머의 추적 중인 트윗 수"""
         return len(self.last_tweet_ids.get(streamer_name, set()))
+    
+    async def get_tweets_from_rss(self, username: str) -> List[Dict[str, Any]]:
+        """특정 사용자의 RSS에서 트윗 목록을 가져옵니다 (누락 알림 복구용)"""
+        tweets = []
+        
+        for instance_url in config.nitter_instances:
+            try:
+                rss_url = f"{instance_url}/{username}/rss"
+                response = await self.client.get(rss_url)
+                
+                if response.status_code != 200:
+                    continue
+                
+                feed = feedparser.parse(response.text)
+                if not feed.entries and response.content:
+                    feed = feedparser.parse(response.content)
+                
+                if not feed.entries:
+                    continue
+                
+                for entry in feed.entries:
+                    tweet_id = self.extract_tweet_id(entry.link)
+                    if tweet_id:
+                        tweets.append({
+                            'id': tweet_id,
+                            'title': entry.title,
+                            'url': f"https://x.com/{username}/status/{tweet_id}",
+                            'published': getattr(entry, 'published', ''),
+                            'content': entry.summary if hasattr(entry, 'summary') else entry.title
+                        })
+                
+                return tweets  # 성공하면 첫 번째 인스턴스 결과 반환
+                
+            except Exception as e:
+                logger.debug(f"RSS 가져오기 실패 ({instance_url}): {e}")
+                continue
+        
+        return tweets
     
     async def test_nitter_instances(self) -> Dict[str, bool]:
         """Nitter 인스턴스들 테스트"""

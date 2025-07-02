@@ -47,50 +47,72 @@ class NotificationManager:
         return None
     
     @staticmethod
-    def show_notification(title: str, message: str, url: str, image_path: Optional[str] = None):
+    def show_notification(title: str, message: str, url: str = None, image_path: Optional[str] = None):
         """win11toast를 사용한 간단한 클릭 가능 알림"""
         try:
-            # win11toast의 on_click 매개변수 사용 (URL 직접 지정)
-            toast(
-                title,
-                message,
-                icon=image_path,
-                duration="long",
-                on_click=url  # URL 문자열 직접 지정 - 클릭 시 기본 브라우저에서 열림
-            )
-            logger.info(f"win11toast 알림 표시: {title} - {message}")
-            
-        except Exception as e:
-            logger.warning(f"win11toast 실패: {e}, webbrowser로 폴백")
-            try:
-                # 간단한 toast (클릭 기능 없음)
+            if url:
+                # win11toast의 on_click 매개변수 사용 (URL 직접 지정)
                 toast(
                     title,
-                    f"{message}\n\n클릭해도 열리지 않습니다. 수동으로 URL을 열어주세요.",
+                    message,
+                    icon=image_path,
+                    duration="long",
+                    on_click=url  # URL 문자열 직접 지정 - 클릭 시 기본 브라우저에서 열림
+                )
+            else:
+                # URL 없는 간단한 알림
+                toast(
+                    title,
+                    message,
                     icon=image_path,
                     duration="long"
                 )
-                logger.info(f"간단한 toast 알림 표시: {title} - {message}")
-                
-                # URL을 클립보드에 복사
-                import subprocess
-                try:
-                    subprocess.run(['clip'], input=url.encode('utf-8'), check=True, 
-                                 creationflags=subprocess.CREATE_NO_WINDOW)
-                    logger.info(f"URL 클립보드 복사: {url}")
-                except:
-                    pass
+            logger.info(f"win11toast 알림 표시: {title} - {message}")
+            
+        except Exception as e:
+            logger.warning(f"win11toast 실패: {e}, 폴백 처리")
+            try:
+                if url:
+                    # 간단한 toast (클릭 기능 없음)
+                    toast(
+                        title,
+                        f"{message}\n\n클릭해도 열리지 않습니다. 수동으로 URL을 열어주세요.",
+                        icon=image_path,
+                        duration="long"
+                    )
+                    logger.info(f"간단한 toast 알림 표시: {title} - {message}")
+                    
+                    # URL을 클립보드에 복사
+                    import subprocess
+                    try:
+                        subprocess.run(['clip'], input=url.encode('utf-8'), check=True, 
+                                     creationflags=subprocess.CREATE_NO_WINDOW)
+                        logger.info(f"URL 클립보드 복사: {url}")
+                    except:
+                        pass
+                else:
+                    # URL 없는 간단한 toast
+                    toast(
+                        title,
+                        message,
+                        icon=image_path,
+                        duration="long"
+                    )
+                    logger.info(f"간단한 알림 표시: {title} - {message}")
                 
             except Exception as e2:
                 logger.error(f"모든 알림 방식 실패: {e2}")
-                # 최후 수단: 직접 브라우저 열기
-                try:
-                    webbrowser.open(url)
-                    logger.info(f"직접 브라우저 열기: {url}")
-                except:
-                    logger.info(f"알림 완전 실패, 수동으로 URL 열기: {url}")
+                if url:
+                    # 최후 수단: 직접 브라우저 열기
+                    try:
+                        webbrowser.open(url)
+                        logger.info(f"직접 브라우저 열기: {url}")
+                    except:
+                        logger.info(f"알림 완전 실패, 수동으로 URL 열기: {url}")
+                        print(f"[알림] {title}: {message}")
+                        print(f"URL: {url}")
+                else:
                     print(f"[알림] {title}: {message}")
-                    print(f"URL: {url}")
     
     @staticmethod
     async def show_live_notification(streamer_name: str, stream_title: str, chzzk_id: str, profile_image_url: Optional[str] = None):

@@ -364,6 +364,9 @@ class StreamerAlarmApp:
             # 네이버 세션 초기화 (백그라운드에서)
             await self.initialize_naver_session()
             
+            # 누락된 알림 복구 (앱 시작 시)
+            await self.recover_missed_notifications()
+            
             # 모니터링 시작
             self.is_running = True
             self.monitoring_task = asyncio.create_task(self.monitor_all_platforms())
@@ -479,6 +482,39 @@ class StreamerAlarmApp:
             logger.warning(f"네이버 세션 초기화 실패: {e}")
             return False
 
+    async def recover_missed_notifications(self):
+        """누락된 알림 복구"""
+        try:
+            from src.utils.missed_notification_recovery import missed_notification_recovery
+            
+            logger.info("📢 누락된 알림 복구 시작")
+            
+            # 복구 프로세스 실행 (타임아웃 적용)
+            recovery_stats = await asyncio.wait_for(
+                missed_notification_recovery.recover_missed_notifications(),
+                timeout=300.0  # 5분 타임아웃
+            )
+            
+            total_recovered = sum(recovery_stats.values())
+            if total_recovered > 0:
+                logger.info(f"✅ 누락 알림 복구 완료: 총 {total_recovered}개 (카페: {recovery_stats.get('cafe', 0)}, 트위터: {recovery_stats.get('twitter', 0)})")
+                
+                # 복구 완료 시스템 알림
+                from src.utils.notification import NotificationManager
+                NotificationManager.show_notification(
+                    "📢 알림 복구 완료",
+                    f"앱이 꺼져있던 동안 놓친 {total_recovered}개의 알림을 복구했습니다."
+                )
+            else:
+                logger.info("✅ 누락된 알림이 없습니다")
+                
+        except asyncio.TimeoutError:
+            logger.error("❌ 누락 알림 복구 타임아웃 (5분)")
+        except Exception as e:
+            logger.error(f"❌ 누락 알림 복구 실패: {e}")
+            import traceback
+            logger.error(f"상세 오류:\n{traceback.format_exc()}")
+
     async def check_ui_signals(self):
         """UI로부터의 신호 확인 및 처리"""
         try:
@@ -576,28 +612,36 @@ class StreamerAlarmApp:
                     except:
                         pass
             
-            # 로그인 상태 확인 요청 처리
-            login_status_file = os.path.join(config.data_dir, "login_status_request.json")
-            if os.path.exists(login_status_file):
+            # 누락 알림 복구 요청 처리
+            missed_recovery_file = os.path.join(config.data_dir, "missed_recovery_request.json")
+            if os.path.exists(missed_recovery_file):
                 try:
-                    with open(login_status_file, 'r', encoding='utf-8') as f:
-                        status_data = json.load(f)
+                    with open(missed_recovery_file, 'r', encoding='utf-8') as f:
+                        recovery_data = json.load(f)
                     
-                    if status_data.get('action') == 'check_login_status' and status_data.get('status') == 'requested':
-                        logger.info("UI로부터 로그인 상태 확인 요청 수신")
+                    if recovery_data.get('action') == 'recover_missed_notifications' and recovery_data.get('status') == 'requested':
+                        recovery_id = recovery_data.get('timestamp', 'unknown')
+                        source = recovery_data.get('source', 'unknown')
+                        logger.info(f"UI로부터 누락 알림 복구 요청 수신 (ID: {recovery_id}, Source: {source})")
                         
-                        # 로그인 상태 확인 실행 (별도 스레드에서)
-                        threading.Thread(target=self.handle_login_status_request, args=(status_data,), daemon=True).start()
+                        # 즉시 처리 중 상태로 변경
+                        recovery_data['status'] = 'processing'
+                        recovery_data['processing_started'] = datetime.now().isoformat()
                         
-                        # 요청 파일 삭제
-                        os.remove(login_status_file)
+                        self._safe_write_json(missed_recovery_file, recovery_data)
+                        
+                        # 누락 알림 복구 실행 (별도 스레드에서)
+                        recovery_thread = threading.Thread(target=self.handle_missed_recovery_request, args=(recovery_data,), daemon=True)
+                        recovery_thread.start()
+                        logger.info(f"누락 알림 복구 처리 스레드 시작됨 (ID: {recovery_id})")
                         
                 except Exception as e:
-                    logger.warning(f"로그인 상태 확인 요청 처리 실패: {e}")
+                    logger.warning(f"누락 알림 복구 요청 처리 실패: {e}")
                     try:
-                        os.remove(login_status_file)
+                        os.remove(missed_recovery_file)
                     except:
                         pass
+            
                         
         except Exception as e:
             logger.debug(f"UI 신호 확인 중 오류 (무시됨): {e}")
@@ -984,80 +1028,6 @@ class StreamerAlarmApp:
                 except:
                     pass
 
-    def handle_login_status_request(self, status_data):
-        """로그인 상태 확인 요청 처리 (별도 스레드)"""
-        # status_data는 로깅 용도로만 사용될 수 있음
-        _ = status_data
-        
-        try:
-            from src.browser.naver_session import naver_session
-            
-            # 새 이벤트 루프 생성
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                # 로그인 상태 확인 (상세 로깅 추가)
-                logger.info("네이버 세션 상태 확인 시작")
-                logger.info(f"naver_session.page 존재: {naver_session.page is not None}")
-                logger.info(f"naver_session.browser 존재: {naver_session.browser is not None}")
-                
-                if naver_session.page and naver_session.browser:
-                    logger.info("브라우저 세션이 존재함 - 로그인 상태 확인 진행")
-                    try:
-                        # 로그인 상태 확인에 타임아웃 적용 (15초로 단축)
-                        check_task = naver_session.check_login_status()
-                        is_logged_in = loop.run_until_complete(asyncio.wait_for(check_task, timeout=15.0))
-                        status = "logged_in" if is_logged_in else "logged_out"
-                        logger.info(f"로그인 상태 확인 결과: {status} (is_logged_in: {is_logged_in})")
-                    except asyncio.TimeoutError:
-                        logger.error("로그인 상태 확인 타임아웃 (15초) - unknown 상태로 처리")
-                        status = "unknown"
-                    except Exception as check_error:
-                        logger.error(f"로그인 상태 확인 중 예외: {check_error}")
-                        status = "unknown"
-                else:
-                    logger.warning("브라우저 세션이 없음 - 로그아웃 상태로 처리")
-                    status = "logged_out"
-                
-                # 결과 파일 생성
-                login_result_file = os.path.join(config.data_dir, "login_status_result.json")
-                result_data = {
-                    "action": "login_status_result",
-                    "status": status,
-                    "timestamp": datetime.now().isoformat(),
-                    "checked_at": datetime.now().isoformat()
-                }
-                
-                logger.info(f"로그인 상태 결과 파일 생성 시작: {login_result_file}")
-                
-                with open(login_result_file, 'w', encoding='utf-8') as f:
-                    json.dump(result_data, f, ensure_ascii=False, indent=2)
-                
-                logger.info(f"로그인 상태 확인 완료 및 결과 파일 저장: {status}")
-                logger.info(f"결과 데이터: {result_data}")
-                
-            finally:
-                loop.close()
-                
-        except Exception as e:
-            logger.error(f"로그인 상태 확인 처리 중 오류: {e}")
-            
-            # 오류 발생 시 unknown 상태로 결과 생성
-            try:
-                login_result_file = os.path.join(config.data_dir, "login_status_result.json")
-                result_data = {
-                    "action": "login_status_result",
-                    "status": "unknown",
-                    "error": str(e),
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                with open(login_result_file, 'w', encoding='utf-8') as f:
-                    json.dump(result_data, f, ensure_ascii=False, indent=2)
-                    
-            except:
-                pass
 
     def _safe_write_json(self, file_path: str, data: dict):
         """Windows에서 안전한 JSON 파일 쓰기"""
@@ -1104,6 +1074,63 @@ class StreamerAlarmApp:
             try:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
+            except:
+                pass
+
+    def handle_missed_recovery_request(self, recovery_data):
+        """누락 알림 복구 요청 처리 (별도 스레드)"""
+        missed_recovery_file = os.path.join(config.data_dir, "missed_recovery_request.json")
+        recovery_id = recovery_data.get('timestamp', 'unknown')
+        
+        try:
+            logger.info(f"누락 알림 복구 요청 처리 시작 (ID: {recovery_id})")
+            
+            # 새 이벤트 루프 생성
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                from src.utils.missed_notification_recovery import missed_notification_recovery
+                
+                # 복구 프로세스 실행
+                recovery_stats = loop.run_until_complete(
+                    asyncio.wait_for(
+                        missed_notification_recovery.recover_missed_notifications(),
+                        timeout=300.0  # 5분 타임아웃
+                    )
+                )
+                
+                total_recovered = sum(recovery_stats.values())
+                
+                logger.info(f"누락 알림 복구 완료: 총 {total_recovered}개 (카페: {recovery_stats.get('cafe', 0)}, 트위터: {recovery_stats.get('twitter', 0)})")
+                
+                # 복구 완료 시스템 알림
+                if total_recovered > 0:
+                    from src.utils.notification import NotificationManager
+                    NotificationManager.show_notification(
+                        "📢 알림 복구 완료",
+                        f"수동 요청으로 {total_recovered}개의 누락된 알림을 복구했습니다."
+                    )
+                
+            except asyncio.TimeoutError:
+                logger.error(f"누락 알림 복구 타임아웃 (5분) - ID: {recovery_id}")
+            except Exception as recovery_error:
+                logger.error(f"누락 알림 복구 중 오류: {recovery_error}")
+            finally:
+                loop.close()
+            
+            # 요청 파일 삭제
+            try:
+                os.remove(missed_recovery_file)
+                logger.debug(f"누락 알림 복구 요청 파일 삭제: {recovery_id}")
+            except:
+                pass
+                
+        except Exception as e:
+            logger.error(f"누락 알림 복구 처리 중 전체 오류: {e}")
+            # 오류 발생 시 요청 파일 정리
+            try:
+                os.remove(missed_recovery_file)
             except:
                 pass
 

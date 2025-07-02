@@ -136,14 +136,9 @@ class CafeMonitor:
                 logger.debug(f"{streamer_name} 네이버 브라우저 세션이 없음 - 건너뜀")
                 return
             
-            # 로그인 상태 재확인 (오류 시 건너뛰기)
-            try:
-                login_status = await naver_session.check_login_status()
-                if not login_status:
-                    logger.debug(f"{streamer_name} 네이버 로그인 상태 아님 - 건너뜀")
-                    return
-            except Exception as e:
-                logger.debug(f"{streamer_name} 로그인 상태 확인 실패 - 건너뜀: {e}")
+            # 캐시된 로그인 상태만 확인 (실시간 확인 제거로 성능 개선)
+            if not naver_session.is_logged_in:
+                logger.debug(f"{streamer_name} 네이버 로그인 상태 아님 (캐시됨) - 건너뜀")
                 return
             
             # 게시물 목록 가져오기
@@ -159,19 +154,10 @@ class CafeMonitor:
             # 이전 게시물 ID들 가져오기
             previous_post_ids = self.last_post_ids.get(streamer_name, set())
             
-            # 첫 번째 체크인 경우, 현재 게시물들을 기준으로 설정하고 최신 게시물 1개 알림
+            # 첫 번째 체크인 경우, 현재 게시물들을 기준으로 설정 (알림 발송하지 않음)
             if self.first_check or not previous_post_ids:
                 self.last_post_ids[streamer_name] = current_post_ids
-                logger.info(f"{streamer_name} 카페 기준 게시물 {len(current_post_ids)}개 설정")
-                
-                # 첫 체크 시 최신 게시물이 24시간 내인지 확인 후 알림 발송
-                if posts:
-                    latest_post = posts[0]  # 첫 번째 게시물이 최신 게시물
-                    if self.is_post_within_24_hours(latest_post.get('date', '')):
-                        await self.send_new_post_notification(streamer_name, latest_post)
-                        logger.info(f"{streamer_name} 카페 첫 체크 시 최신 게시물 알림 발송: {latest_post['title']}")
-                    else:
-                        logger.info(f"{streamer_name} 카페 최신 게시물이 24시간 이전 게시물이므로 알림 건너뜀: {latest_post.get('date', '')}")
+                logger.info(f"{streamer_name} 카페 기준 게시물 {len(current_post_ids)}개 설정 (첫 체크 - 알림 없음)")
                 return
             
             # 새 게시물 찾기

@@ -6,7 +6,9 @@ import time
 import json
 import os
 import webbrowser
+import asyncio
 from datetime import datetime
+from typing import Optional
 from ..config import config
 from ..utils.logger import logger
 from .styles import load_css
@@ -697,6 +699,7 @@ class MainWindow:
                 with col2:
                     twitter_username = st.text_input("🐦 트위터 사용자명", placeholder="예: username")
                     cafe_user_id = st.text_input("💬 네이버 카페 사용자 ID", placeholder="예: user123")
+                    cafe_club_id = st.text_input("🏢 카페 클럽 ID", placeholder="예: 30919539")
                 
                 enabled = st.checkbox("✅ 활성화", value=True)
                 
@@ -708,16 +711,29 @@ class MainWindow:
                             if name in streamers:
                                 st.error(f"❌ '{name}' 스트리머가 이미 존재합니다!")
                             else:
+                                # 프로필 이미지 URL 가져오기
+                                profile_image_url = None
+                                if chzzk_id.strip():
+                                    with st.spinner("🔄 프로필 이미지를 가져오는 중..."):
+                                        profile_image_url = self.get_chzzk_profile_image_sync(chzzk_id.strip())
+                                
                                 streamers[name] = {
                                     'chzzk_id': chzzk_id.strip(),
                                     'twitter_username': twitter_username.strip(),
                                     'cafe_user_id': cafe_user_id.strip(),
-                                    'cafe_club_id': '30919539',
+                                    'cafe_club_id': cafe_club_id.strip(),
                                     'enabled': enabled,
-                                    'profile_image': None
+                                    'profile_image': profile_image_url
                                 }
                                 config.save_streamers(streamers)
-                                st.success(f"🎉 스트리머 '{name}'가 추가되었습니다!")
+                                
+                                if profile_image_url:
+                                    st.success(f"🎉 스트리머 '{name}'가 추가되었습니다! (프로필 이미지 포함)")
+                                else:
+                                    st.success(f"🎉 스트리머 '{name}'가 추가되었습니다!")
+                                    if chzzk_id.strip():
+                                        st.info("💡 프로필 이미지는 백그라운드에서 자동으로 업데이트됩니다.")
+                                
                                 st.session_state.show_add_form = False
                                 st.rerun()
                         else:
@@ -743,6 +759,7 @@ class MainWindow:
                 with col2:
                     twitter_username = st.text_input("트위터 사용자명", value=data.get('twitter_username', ''))
                     cafe_user_id = st.text_input("카페 사용자 ID", value=data.get('cafe_user_id', ''))
+                    cafe_club_id = st.text_input("카페 클럽 ID", value=data.get('cafe_club_id', ''))
                 
                 enabled = st.checkbox("활성화", value=data.get('enabled', True))
                 
@@ -759,18 +776,34 @@ class MainWindow:
                             if new_name != name:
                                 del streamers[name]
                             
+                            # 프로필 이미지 업데이트 확인
+                            current_profile = data.get('profile_image')
+                            updated_profile = current_profile
+                            
+                            # CHZZK ID가 변경되었거나 기존 프로필이 없을 경우 새로 가져오기
+                            if chzzk_id.strip() and (chzzk_id.strip() != data.get('chzzk_id') or not current_profile):
+                                with st.spinner("🔄 프로필 이미지 업데이트 중..."):
+                                    new_profile = self.get_chzzk_profile_image_sync(chzzk_id.strip())
+                                    if new_profile:
+                                        updated_profile = new_profile
+                            
                             # 새 데이터 저장
                             streamers[new_name] = {
                                 'chzzk_id': chzzk_id.strip(),
                                 'twitter_username': twitter_username.strip(),
                                 'cafe_user_id': cafe_user_id.strip(),
-                                'cafe_club_id': data.get('cafe_club_id', '30919539'),
+                                'cafe_club_id': cafe_club_id.strip(),
                                 'enabled': enabled,
-                                'profile_image': data.get('profile_image')
+                                'profile_image': updated_profile
                             }
                             
                             config.save_streamers(streamers)
-                            st.success(f"✅ {new_name} 정보가 저장되었습니다!")
+                            
+                            if updated_profile != current_profile and updated_profile:
+                                st.success(f"✅ {new_name} 정보가 저장되었습니다! (프로필 이미지 업데이트 포함)")
+                            else:
+                                st.success(f"✅ {new_name} 정보가 저장되었습니다!")
+                            
                             st.session_state[f'edit_mode_{name}'] = False
                             st.rerun()
                 
@@ -1116,6 +1149,51 @@ class MainWindow:
                     os.remove(temp_file)
             except:
                 pass
+    
+    def get_chzzk_profile_image_sync(self, chzzk_id: str) -> Optional[str]:
+        """치지직 프로필 이미지 URL 가져오기 (동기적 버전)"""
+        try:
+            import httpx
+            
+            # 비동기 버전을 동기적으로 실행
+            return asyncio.run(self._get_chzzk_profile_image_async(chzzk_id))
+        except Exception as e:
+            logger.warning(f"CHZZK 프로필 이미지 가져오기 실패 ({chzzk_id}): {e}")
+            return None
+    
+    async def _get_chzzk_profile_image_async(self, chzzk_id: str) -> Optional[str]:
+        """치지직 프로필 이미지 URL 가져오기 (비동기 버전)"""
+        try:
+            import httpx
+            
+            # CHZZK 채널 정보 API 호출
+            url = f"https://api.chzzk.naver.com/service/v1/channels/{chzzk_id}"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url, headers=headers)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data.get('content', {})
+                    
+                    # 프로필 이미지 URL 추출
+                    profile_image_url = content.get('channelImageUrl')
+                    if profile_image_url:
+                        logger.debug(f"CHZZK 프로필 이미지 URL 획득: {profile_image_url}")
+                        return profile_image_url
+                    else:
+                        logger.debug(f"CHZZK 채널 {chzzk_id}에 프로필 이미지가 없습니다.")
+                else:
+                    logger.warning(f"CHZZK API 응답 오류: {response.status_code}")
+                    
+        except Exception as e:
+            logger.warning(f"CHZZK 프로필 이미지 API 호출 실패 ({chzzk_id}): {e}")
+        
+        return None
 
 def run_streamlit_app():
     """Streamlit 앱 실행 함수 (하위 호환성)"""

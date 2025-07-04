@@ -37,6 +37,8 @@ class StreamerAlarmApp:
         self.is_running = False
         self.last_cache_cleanup = 0
         self.lock_file_path = os.path.join(tempfile.gettempdir(), "streamer_alarm.lock")
+        self.last_monitoring_time = time.time()
+        self.sleep_detection_threshold = 120  # 2분 이상 간격이면 절전모드로 감지
     
     def is_already_running(self) -> bool:
         """다른 인스턴스가 이미 실행 중인지 확인"""
@@ -307,7 +309,7 @@ class StreamerAlarmApp:
             return False
     
     async def monitor_all_platforms(self):
-        """모든 플랫폼 모니터링 - UI 신호 처리 빈도 개선"""
+        """모든 플랫폼 모니터링 - UI 신호 처리 빈도 개선 및 절전모드 복구 감지"""
         first_run = True
         current_interval = config.get_settings().get('check_interval', 30)
         last_monitoring_time = asyncio.get_event_loop().time()
@@ -315,6 +317,19 @@ class StreamerAlarmApp:
         while self.is_running:
             try:
                 current_time = asyncio.get_event_loop().time()
+                
+                # 절전모드 복구 감지 (실제 시간과 마지막 모니터링 시간 비교)
+                actual_time = time.time()
+                time_gap = actual_time - self.last_monitoring_time
+                
+                if time_gap > self.sleep_detection_threshold:
+                    logger.warning(f"⚠️ 절전모드 복구 감지: {time_gap:.1f}초 간격 ({time_gap/60:.1f}분)")
+                    
+                    # 절전모드 복구 후 누락 알림 복구 실행
+                    try:
+                        await self.recover_missed_notifications(startup=False, sleep_recovery=True)
+                    except Exception as recovery_error:
+                        logger.error(f"절전모드 복구 후 누락 알림 복구 실패: {recovery_error}")
                 
                 # UI 신호는 항상 확인 (응답성 향상)
                 await self.check_ui_signals()
@@ -330,6 +345,7 @@ class StreamerAlarmApp:
                     )
                     
                     last_monitoring_time = current_time
+                    self.last_monitoring_time = actual_time  # 실제 시간 업데이트
                     
                     # 첫 번째 실행 후 first_check 완료 표시
                     if first_run:
@@ -365,7 +381,7 @@ class StreamerAlarmApp:
             await self.initialize_naver_session()
             
             # 누락된 알림 복구 (앱 시작 시)
-            await self.recover_missed_notifications()
+            await self.recover_missed_notifications(startup=True)
             
             # 모니터링 시작
             self.is_running = True
@@ -482,12 +498,17 @@ class StreamerAlarmApp:
             logger.warning(f"네이버 세션 초기화 실패: {e}")
             return False
 
-    async def recover_missed_notifications(self):
+    async def recover_missed_notifications(self, startup=False, sleep_recovery=False):
         """누락된 알림 복구"""
         try:
             from src.utils.missed_notification_recovery import missed_notification_recovery
             
-            logger.info("📢 누락된 알림 복구 시작")
+            if startup:
+                logger.info("📢 앱 시작 시 누락된 알림 복구 시작")
+            elif sleep_recovery:
+                logger.info("🛌 절전모드 복구 후 누락된 알림 복구 시작")
+            else:
+                logger.info("📢 수동 요청으로 누락된 알림 복구 시작")
             
             # 복구 프로세스 실행 (타임아웃 적용)
             recovery_stats = await asyncio.wait_for(
@@ -501,10 +522,21 @@ class StreamerAlarmApp:
                 
                 # 복구 완료 시스템 알림
                 from src.utils.notification import NotificationManager
-                NotificationManager.show_notification(
-                    "📢 알림 복구 완료",
-                    f"앱이 꺼져있던 동안 놓친 {total_recovered}개의 알림을 복구했습니다."
-                )
+                if startup:
+                    NotificationManager.show_notification(
+                        "📢 알림 복구 완료",
+                        f"앱이 꺼져있던 동안 놓친 {total_recovered}개의 알림을 복구했습니다."
+                    )
+                elif sleep_recovery:
+                    NotificationManager.show_notification(
+                        "🛌 절전모드 복구 완료",
+                        f"절전모드 동안 놓친 {total_recovered}개의 알림을 복구했습니다."
+                    )
+                else:
+                    NotificationManager.show_notification(
+                        "📢 수동 알림 복구 완료",
+                        f"수동 요청으로 {total_recovered}개의 누락된 알림을 복구했습니다."
+                    )
             else:
                 logger.info("✅ 누락된 알림이 없습니다")
                 

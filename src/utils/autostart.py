@@ -10,15 +10,23 @@ class AutoStartManager:
         self.registry_key = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
         
     def get_executable_path(self) -> str:
-        """실행 파일 경로 가져오기"""
+        """실행 파일 경로 가져오기 (CMD 창 없이 실행되도록 개선)"""
         if getattr(sys, 'frozen', False):
             # PyInstaller로 빌드된 실행파일인 경우
             return sys.executable
         else:
-            # 개발 환경에서는 python 스크립트 경로
-            script_path = os.path.abspath(sys.argv[0])
-            python_path = sys.executable
-            return f'"{python_path}" "{script_path}"'
+            # 개발 환경에서는 VBS 스크립트를 사용하여 CMD 창 숨김
+            script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            vbs_path = os.path.join(script_dir, 'run_invisible.vbs')
+            
+            # VBS 파일이 있으면 VBS로 실행, 없으면 pythonw 사용
+            if os.path.exists(vbs_path):
+                return f'wscript.exe "{vbs_path}"'
+            else:
+                # pythonw로 대체 (창 없이 실행)
+                script_path = os.path.abspath(sys.argv[0])
+                python_path = sys.executable.replace('python.exe', 'pythonw.exe')
+                return f'"{python_path}" "{script_path}"'
     
     def is_autostart_enabled(self) -> bool:
         """자동 시작 설정 여부 확인"""
@@ -34,14 +42,14 @@ class AutoStartManager:
             return False
     
     def enable_autostart(self) -> bool:
-        """자동 시작 설정 활성화"""
+        """자동 시작 설정 활성화 (CMD 창 없이 실행)"""
         try:
             executable_path = self.get_executable_path()
             
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.registry_key, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.SetValueEx(key, self.app_name, 0, winreg.REG_SZ, executable_path)
             
-            logger.info(f"자동 시작 설정 활성화: {executable_path}")
+            logger.info(f"자동 시작 설정 활성화 (CMD 창 없음): {executable_path}")
             return True
             
         except Exception as e:

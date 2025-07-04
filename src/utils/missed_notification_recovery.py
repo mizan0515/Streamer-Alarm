@@ -549,15 +549,17 @@ class MissedNotificationRecovery:
         return sent_count, error_count
     
     async def _send_single_notification(self, item: Dict[str, Any]) -> bool:
-        """단일 알림을 발송하고 기록에 추가합니다"""
+        """단일 알림을 발송하고 기록에 추가합니다 (프로필 이미지 매칭 오류 수정)"""
         try:
             streamer_name = item['streamer_name']
             item_type = item['type']
             title = item['title']
             url = item['url']
             
-            # 프로필 이미지 가져오기
-            profile_image_url = await self._get_streamer_profile_image(streamer_name)
+            logger.debug(f"📢 {item_type} 알림 발송 시작: {streamer_name} - {title[:30]}...")
+            
+            # 프로필 이미지 가져오기 (스트리머 이름 검증 강화)
+            profile_image_url = await self._get_streamer_profile_image_safe(streamer_name)
             
             # 알림 발송
             if item_type == 'cafe':
@@ -571,6 +573,8 @@ class MissedNotificationRecovery:
                 )
                 notification_title = f"{streamer_name} 새 트윗"
             
+            logger.debug(f"✅ {item_type} 알림 발송 완료: {streamer_name} (프로필: {'있음' if profile_image_url else '없음'})")
+            
             # 알림 기록에 추가
             config.add_notification(
                 streamer_name=streamer_name,
@@ -583,7 +587,9 @@ class MissedNotificationRecovery:
             return True
             
         except Exception as e:
-            logger.error(f"단일 알림 발송 실패: {e}")
+            logger.error(f"단일 알림 발송 실패 ({item.get('streamer_name', 'unknown')}): {e}")
+            import traceback
+            logger.debug(f"알림 발송 오류 상세:\n{traceback.format_exc()}")
             return False
     
     async def _get_streamer_profile_image(self, streamer_name: str) -> Optional[str]:
@@ -601,6 +607,60 @@ class MissedNotificationRecovery:
             
         except Exception as e:
             logger.warning(f"프로필 이미지 가져오기 실패 ({streamer_name}): {e}")
+            return None
+    
+    async def _get_streamer_profile_image_safe(self, streamer_name: str) -> Optional[str]:
+        """스트리머 프로필 이미지 URL을 안전하게 가져옵니다 (매칭 오류 방지)"""
+        try:
+            # 스트리머 이름 검증
+            if not streamer_name or not isinstance(streamer_name, str):
+                logger.warning(f"⚠️ 잘못된 스트리머 이름: {streamer_name} (타입: {type(streamer_name)})")
+                return None
+            
+            # 스트리머 데이터 가져오기
+            streamers = config.get_streamers()
+            if not streamers:
+                logger.warning("⚠️ 스트리머 데이터를 불러올 수 없습니다")
+                return None
+            
+            # 정확한 스트리머 이름 매칭 확인
+            if streamer_name not in streamers:
+                logger.warning(f"⚠️ 스트리머 '{streamer_name}' 설정을 찾을 수 없습니다")
+                logger.debug(f"사용 가능한 스트리머: {list(streamers.keys())}")
+                return None
+            
+            streamer_data = streamers[streamer_name]
+            chzzk_id = streamer_data.get('chzzk_id')
+            
+            if not chzzk_id:
+                logger.debug(f"스트리머 '{streamer_name}'의 CHZZK ID가 없습니다")
+                return None
+            
+            logger.debug(f"🖼️ 프로필 이미지 요청: {streamer_name} (CHZZK ID: {chzzk_id})")
+            
+            # CHZZK 모니터를 통해 프로필 이미지 가져오기
+            from ..monitors.chzzk_monitor import chzzk_monitor
+            
+            # 타임아웃을 적용하여 무한 대기 방지
+            profile_url = await asyncio.wait_for(
+                chzzk_monitor.get_channel_profile_image(chzzk_id),
+                timeout=10.0
+            )
+            
+            if profile_url:
+                logger.debug(f"✅ 프로필 이미지 취득 성공: {streamer_name}")
+            else:
+                logger.debug(f"⚠️ 프로필 이미지 없음: {streamer_name}")
+            
+            return profile_url
+            
+        except asyncio.TimeoutError:
+            logger.warning(f"⏰ 프로필 이미지 가져오기 타임아웃 ({streamer_name})")
+            return None
+        except Exception as e:
+            logger.warning(f"💥 프로필 이미지 가져오기 실패 ({streamer_name}): {e}")
+            import traceback
+            logger.debug(f"프로필 이미지 오류 상세 ({streamer_name}):\n{traceback.format_exc()}")
             return None
     
     async def _show_bulk_recovery_notification(self, total_count: int):

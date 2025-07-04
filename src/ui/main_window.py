@@ -39,6 +39,9 @@ class MainWindow:
             
             # 초기화 시 프로필 이미지 스캔 실행
             self.scan_existing_profile_images()
+            
+            # 기존 스트리머들에 알림 설정 추가 (마이그레이션)
+            self.migrate_notification_settings()
         
         # 라이브 상태 관리를 위한 세션 상태 초기화
         if 'streamer_data_cache' not in st.session_state:
@@ -591,14 +594,23 @@ class MainWindow:
     def create_streamer_card_optimized(self, name: str, data: dict):
         """최적화된 스트리머 카드 생성"""
         with st.container():
-            # 플랫폼 배지들
+            # 개별 알림 설정 상태 확인 (먼저 정의)
+            notifications = data.get('notifications', {})
+            chzzk_enabled = notifications.get('chzzk', True)
+            twitter_enabled = notifications.get('twitter', True)
+            cafe_enabled = notifications.get('cafe', True)
+            
+            # 플랫폼 배지들 (알림 상태 반영)
             platforms = []
             if data.get('chzzk_id'):
-                platforms.append('<span class="platform-badge platform-chzzk">📺 치지직</span>')
+                chzzk_class = 'platform-badge platform-chzzk' + ('' if chzzk_enabled else ' disabled')
+                platforms.append(f'<span class="{chzzk_class}">📺 치지직</span>')
             if data.get('twitter_username'):
-                platforms.append('<span class="platform-badge platform-twitter">🐦 트위터</span>')
+                twitter_class = 'platform-badge platform-twitter' + ('' if twitter_enabled else ' disabled')
+                platforms.append(f'<span class="{twitter_class}">🐦 트위터</span>')
             if data.get('cafe_user_id'):
-                platforms.append('<span class="platform-badge platform-cafe">💬 카페</span>')
+                cafe_class = 'platform-badge platform-cafe' + ('' if cafe_enabled else ' disabled')
+                platforms.append(f'<span class="{cafe_class}">💬 카페</span>')
             
             # 상태 배지
             status_class = "status-active" if data.get('enabled', True) else "status-inactive"
@@ -625,7 +637,9 @@ class MainWindow:
                 # 기본 아바타
                 profile_content = '<div style="width: 64px; height: 64px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 28px; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); flex-shrink: 0;">👤</div>'
             
-            # 기존 HTML 카드 형태로 복원
+            # 알림 상태는 이제 플랫폼 배지 색상으로 표현됨
+            
+            # 기존 HTML 카드 형태로 복원 (알림 상태 포함)
             card_html = f"""
             <div class="streamer-card">
                 <div class="streamer-info">
@@ -647,6 +661,7 @@ class MainWindow:
             st.markdown(card_html, unsafe_allow_html=True)
             
             # 액션 버튼들
+            st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("✏️ 편집", key=f"edit_{name}", use_container_width=True):
@@ -703,6 +718,17 @@ class MainWindow:
                 
                 enabled = st.checkbox("✅ 활성화", value=True)
                 
+                # 개별 알림 설정
+                st.markdown("**🔔 알림 설정**")
+                notif_col1, notif_col2, notif_col3 = st.columns(3)
+                
+                with notif_col1:
+                    chzzk_notifications = st.checkbox("📺 스트리밍 알림", value=True, key="add_chzzk_notif")
+                with notif_col2:
+                    twitter_notifications = st.checkbox("🐦 트위터 알림", value=True, key="add_twitter_notif")
+                with notif_col3:
+                    cafe_notifications = st.checkbox("💬 카페 알림", value=True, key="add_cafe_notif")
+                
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.form_submit_button("✨ 추가", type="primary", use_container_width=True):
@@ -723,7 +749,12 @@ class MainWindow:
                                     'cafe_user_id': cafe_user_id.strip(),
                                     'cafe_club_id': cafe_club_id.strip(),
                                     'enabled': enabled,
-                                    'profile_image': profile_image_url
+                                    'profile_image': profile_image_url,
+                                    'notifications': {
+                                        'chzzk': chzzk_notifications,
+                                        'twitter': twitter_notifications,
+                                        'cafe': cafe_notifications
+                                    }
                                 }
                                 config.save_streamers(streamers)
                                 
@@ -763,6 +794,36 @@ class MainWindow:
                 
                 enabled = st.checkbox("활성화", value=data.get('enabled', True))
                 
+                # 개별 알림 설정
+                st.markdown("---")
+                st.markdown("**🔔 알림 세부 설정**")
+                st.caption("플랫폼별 알림을 개별적으로 켜고 끌 수 있습니다.")
+                
+                current_notifications = data.get('notifications', {'chzzk': True, 'twitter': True, 'cafe': True})
+                
+                notif_col1, notif_col2, notif_col3 = st.columns(3)
+                
+                with notif_col1:
+                    if data.get('chzzk_id'):
+                        edit_chzzk_notifications = st.checkbox("📺 스트리밍 알림", value=current_notifications.get('chzzk', True), key=f"edit_chzzk_notif_{name}")
+                    else:
+                        edit_chzzk_notifications = False
+                        st.caption("📺 CHZZK ID 없음")
+                        
+                with notif_col2:
+                    if data.get('twitter_username'):
+                        edit_twitter_notifications = st.checkbox("🐦 트위터 알림", value=current_notifications.get('twitter', True), key=f"edit_twitter_notif_{name}")
+                    else:
+                        edit_twitter_notifications = False
+                        st.caption("🐦 트위터 ID 없음")
+                        
+                with notif_col3:
+                    if data.get('cafe_user_id'):
+                        edit_cafe_notifications = st.checkbox("💬 카페 알림", value=current_notifications.get('cafe', True), key=f"edit_cafe_notif_{name}")
+                    else:
+                        edit_cafe_notifications = False
+                        st.caption("💬 카페 ID 없음")
+                
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.form_submit_button("💾 저장", type="primary", use_container_width=True):
@@ -794,7 +855,12 @@ class MainWindow:
                                 'cafe_user_id': cafe_user_id.strip(),
                                 'cafe_club_id': cafe_club_id.strip(),
                                 'enabled': enabled,
-                                'profile_image': updated_profile
+                                'profile_image': updated_profile,
+                                'notifications': {
+                                    'chzzk': edit_chzzk_notifications,
+                                    'twitter': edit_twitter_notifications,
+                                    'cafe': edit_cafe_notifications
+                                }
                             }
                             
                             config.save_streamers(streamers)
@@ -1194,6 +1260,32 @@ class MainWindow:
             logger.warning(f"CHZZK 프로필 이미지 API 호출 실패 ({chzzk_id}): {e}")
         
         return None
+    
+    # update_notification_setting 함수 제거 - 이제 편집 모드에서만 관리
+    
+    def migrate_notification_settings(self):
+        """기존 스트리머들에 알림 설정 추가 (마이그레이션)"""
+        try:
+            streamers = config.get_streamers()
+            updated = False
+            
+            for name, data in streamers.items():
+                if 'notifications' not in data:
+                    # 기본값으로 모든 알림 활성화
+                    data['notifications'] = {
+                        'chzzk': True,
+                        'twitter': True,
+                        'cafe': True
+                    }
+                    updated = True
+                    logger.debug(f"{name} 스트리머에 알림 설정 추가")
+            
+            if updated:
+                config.save_streamers(streamers)
+                logger.info("스트리머 알림 설정 마이그레이션 완료")
+                
+        except Exception as e:
+            logger.error(f"알림 설정 마이그레이션 실패: {e}")
 
 def run_streamlit_app():
     """Streamlit 앱 실행 함수 (하위 호환성)"""

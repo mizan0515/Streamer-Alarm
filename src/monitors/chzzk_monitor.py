@@ -128,6 +128,11 @@ class ChzzkMonitor:
             
             # 방송 시작 알림 (이전에 방송 중이 아니었고, 현재 방송 중인 경우)
             if is_live and not was_live:
+                # 개별 알림 설정 확인
+                if not streamer_data.get('notifications', {}).get('chzzk', True):
+                    logger.debug(f"{streamer_name} 치지직 알림이 비활성화됨")
+                    return
+                
                 logger.info(f"🎉 {streamer_name} 방송 시작 알림 발송: {title}")
                 
                 # 프로필 이미지 URL 가져오기

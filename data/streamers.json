@@ -5,7 +5,12 @@
     "cafe_user_id": "cuEWXUyMqKzQGLwr3RwrXw",
     "cafe_club_id": "30919539",
     "enabled": true,
-    "profile_image": "https://nng-phinf.pstatic.net/MjAyNTA1MTBfMjAx/MDAxNzQ2ODY0NzIwNDY1.NnE1idlJtwTgWbW4_e6VjB5sV72TKKcklCKj7Z-x9E4g.JQzog5SAqZKu0cbxg2R9EJfRScZ6GhCrrl1IJXlhZ0wg.PNG/31C5D6C9-0592-48CC-8FAB-784E401CBD24-1746864717.png"
+    "profile_image": "https://nng-phinf.pstatic.net/MjAyNTA1MTBfMjAx/MDAxNzQ2ODY0NzIwNDY1.NnE1idlJtwTgWbW4_e6VjB5sV72TKKcklCKj7Z-x9E4g.JQzog5SAqZKu0cbxg2R9EJfRScZ6GhCrrl1IJXlhZ0wg.PNG/31C5D6C9-0592-48CC-8FAB-784E401CBD24-1746864717.png",
+    "notifications": {
+      "chzzk": true,
+      "twitter": true,
+      "cafe": true
+    }
   },
   "카린": {
     "chzzk_id": "32fb866e323242b770cdc790f991a6f6",
@@ -13,7 +18,12 @@
     "cafe_user_id": "0eMme44p-arwLgz3wMo-3w",
     "cafe_club_id": "30919539",
     "enabled": true,
-    "profile_image": "https://nng-phinf.pstatic.net/MjAyNDA3MDdfMjAg/MDAxNzIwMzM0MTk0MjAz.GRLFSI66ByerGVPBJmX7nC9WudQCO45VsXUxAvsbEMkg.J6DZpTBwgQMSpyTrunP4wbmZO71ce9oRN3WrLnOUye0g.PNG/1000053454.png"
+    "profile_image": "https://nng-phinf.pstatic.net/MjAyNDA3MDdfMjAg/MDAxNzIwMzM0MTk0MjAz.GRLFSI66ByerGVPBJmX7nC9WudQCO45VsXUxAvsbEMkg.J6DZpTBwgQMSpyTrunP4wbmZO71ce9oRN3WrLnOUye0g.PNG/1000053454.png",
+    "notifications": {
+      "chzzk": true,
+      "twitter": true,
+      "cafe": true
+    }
   },
   "엘리": {
     "chzzk_id": "475313e6c26639d5763628313b4c130e",
@@ -21,7 +31,12 @@
     "cafe_user_id": "blKmz6tKug60_5B_A_UNQA",
     "cafe_club_id": "30919539",
     "enabled": true,
-    "profile_image": "https://nng-phinf.pstatic.net/MjAyNDEyMjdfOTcg/MDAxNzM1MjgyMTUwODI2.tGRlDF6lYvDfQ_XfW3tv_F6knjIjc52oC5rsXLHwVbsg.DStQURRzxiqNK09L68xV1PSwFn3IiqMhRMUX-8vCVRog.JPEG/NNG-17352821505144682683349853075059.jpg"
+    "profile_image": "https://nng-phinf.pstatic.net/MjAyNDEyMjdfOTcg/MDAxNzM1MjgyMTUwODI2.tGRlDF6lYvDfQ_XfW3tv_F6knjIjc52oC5rsXLHwVbsg.DStQURRzxiqNK09L68xV1PSwFn3IiqMhRMUX-8vCVRog.JPEG/NNG-17352821505144682683349853075059.jpg",
+    "notifications": {
+      "chzzk": true,
+      "twitter": true,
+      "cafe": true
+    }
   },
   "에리스": {
     "chzzk_id": "17d8605fc37fb5ef49f5f67ae786fe4e",
@@ -29,7 +44,12 @@
     "cafe_user_id": "7DjwjhrCoMP8DCw1623w3w",
     "cafe_club_id": "30919539",
     "enabled": true,
-    "profile_image": "https://nng-phinf.pstatic.net/MjAyNDA3MTFfMjU1/MDAxNzIwNjYzNjYzMzE2.6ViLvn07CoW0FgG0DVAifAaDyRibcvuJ7Wf80lcaedog.h9LXAMib3NNk7EtCJYbHOB1fMpzdQ49Q9At7b3MnuMUg.PNG/0E954B06-FA2A-4A12-ADFE-36CFA1F6CED7-1720663663.png"
+    "profile_image": "https://nng-phinf.pstatic.net/MjAyNDA3MTFfMjU1/MDAxNzIwNjYzNjYzMzE2.6ViLvn07CoW0FgG0DVAifAaDyRibcvuJ7Wf80lcaedog.h9LXAMib3NNk7EtCJYbHOB1fMpzdQ49Q9At7b3MnuMUg.PNG/0E954B06-FA2A-4A12-ADFE-36CFA1F6CED7-1720663663.png",
+    "notifications": {
+      "chzzk": true,
+      "twitter": true,
+      "cafe": true
+    }
   },
   "소풍왔니": {
     "chzzk_id": "089185efc29a8fbe14ea294dc85f9661",
@@ -37,7 +57,12 @@
     "cafe_user_id": "GO7tGTwhLKbT-wGtJXyH3A",
     "cafe_club_id": "30288368",
     "enabled": true,
-    "profile_image": "https://nng-phinf.pstatic.net/MjAyNTA0MTFfNjIg/MDAxNzQ0MzQzMjg3NDk0.wJw-5ZFoCEcFUPa1EcnCwo8kbWEIauFkrxS74gVVyGkg.5L_bQIlJkmc6daVAFBTI_iEJgODO9c99sgxBtiU5j6kg.PNG/%EC%9D%BC%EB%9F%AC%EC%8A%A4%ED%8A%B812_3.png"
+    "profile_image": "https://nng-phinf.pstatic.net/MjAyNTA0MTFfNjIg/MDAxNzQ0MzQzMjg3NDk0.wJw-5ZFoCEcFUPa1EcnCwo8kbWEIauFkrxS74gVVyGkg.5L_bQIlJkmc6daVAFBTI_iEJgODO9c99sgxBtiU5j6kg.PNG/%EC%9D%BC%EB%9F%AC%EC%8A%A4%ED%8A%B812_3.png",
+    "notifications": {
+      "chzzk": true,
+      "twitter": true,
+      "cafe": true
+    }
   },
   "아라하시 타비": {
     "chzzk_id": "a6c4ddb09cdb160478996007bff35296",
@@ -45,7 +70,12 @@
     "cafe_user_id": "3BcOWMiN3wPomGVkb8D_Nw",
     "cafe_club_id": "29424353",
     "enabled": true,
-    "profile_image": "https://nng-phinf.pstatic.net/MjAyNTA0MjVfOTMg/MDAxNzQ1NTY0NTU1NzU3.WNVa64V_5BoB2aNJRszaKa2YCcGxfxz1G8XbjzgOEZcg.SBT-Twa7Ryz6PiGmILO64nc_aZz4pfygn9r-8wQdkH8g.PNG/hsddsaf.png"
+    "profile_image": "https://nng-phinf.pstatic.net/MjAyNTA0MjVfOTMg/MDAxNzQ1NTY0NTU1NzU3.WNVa64V_5BoB2aNJRszaKa2YCcGxfxz1G8XbjzgOEZcg.SBT-Twa7Ryz6PiGmILO64nc_aZz4pfygn9r-8wQdkH8g.PNG/hsddsaf.png",
+    "notifications": {
+      "chzzk": true,
+      "twitter": true,
+      "cafe": true
+    }
   },
   "아카네 리제": {
     "chzzk_id": "4325b1d5bbc321fad3042306646e2e50",
@@ -53,6 +83,11 @@
     "cafe_user_id": "qw7bWMI7mhfaPyPoQg7Dng",
     "cafe_club_id": "29424353",
     "enabled": true,
-    "profile_image": "https://nng-phinf.pstatic.net/MjAyNDA0MDNfMTM1/MDAxNzEyMDkyMzgxMjEz.EvnT25hUyEBFLrjuklk34p8oOeL9rWjbAGdUvYHp9Gcg.u-1-_0IUl8AYP9VVvGHJxb93wIASF2f1g7w1pn7Mztkg.JPEG/21.jpg"
+    "profile_image": "https://nng-phinf.pstatic.net/MjAyNDA0MDNfMTM1/MDAxNzEyMDkyMzgxMjEz.EvnT25hUyEBFLrjuklk34p8oOeL9rWjbAGdUvYHp9Gcg.u-1-_0IUl8AYP9VVvGHJxb93wIASF2f1g7w1pn7Mztkg.JPEG/21.jpg",
+    "notifications": {
+      "chzzk": true,
+      "twitter": true,
+      "cafe": true
+    }
   }
 }

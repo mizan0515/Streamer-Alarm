@@ -160,6 +160,14 @@ class TwitterMonitor:
                 # 새 트윗들에 대해 알림 발송
                 for tweet in tweets_data:
                     if tweet['id'] in new_tweet_ids:
+                        # 개별 알림 설정 확인
+                        streamers = config.get_streamers()
+                        streamer_data = streamers.get(streamer_name, {})
+                        
+                        if not streamer_data.get('notifications', {}).get('twitter', True):
+                            logger.debug(f"{streamer_name} 트위터 알림이 비활성화됨")
+                            continue
+                            
                         await self.send_new_tweet_notification(streamer_name, username, tweet)
                 
                 # 마지막 트윗 ID들 업데이트

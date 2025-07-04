@@ -169,6 +169,14 @@ class CafeMonitor:
                 # 새 게시물들에 대해 알림 발송
                 for post in posts:
                     if post['id'] in new_post_ids:
+                        # 개별 알림 설정 확인
+                        streamers = config.get_streamers()
+                        streamer_data = streamers.get(streamer_name, {})
+                        
+                        if not streamer_data.get('notifications', {}).get('cafe', True):
+                            logger.debug(f"{streamer_name} 카페 알림이 비활성화됨")
+                            continue
+                            
                         await self.send_new_post_notification(streamer_name, post)
                 
                 # 마지막 게시물 ID들 업데이트

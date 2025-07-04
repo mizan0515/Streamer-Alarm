@@ -488,6 +488,25 @@
     color: white;
 }
 
+/* 비활성화된 플랫폼 배지 */
+.platform-chzzk.disabled {
+    background: #e9ecef;
+    color: #6c757d;
+    opacity: 0.7;
+}
+
+.platform-twitter.disabled {
+    background: #e9ecef;
+    color: #6c757d;
+    opacity: 0.7;
+}
+
+.platform-cafe.disabled {
+    background: #e9ecef;
+    color: #6c757d;
+    opacity: 0.7;
+}
+
 /* 상태 배지 */
 .status-active {
     background: linear-gradient(45deg, #2ed573, #17a2b8);
